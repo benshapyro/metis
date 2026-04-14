@@ -37,6 +37,12 @@ const nextConfig: NextConfig = {
         hostname: "avatar.vercel.sh",
       },
     ],
+    localPatterns: [
+      {
+        pathname: "/api/files/serve",
+        search: "?pathname=*",
+      },
+    ],
   },
   experimental: {
     prefetchInlining: true,
