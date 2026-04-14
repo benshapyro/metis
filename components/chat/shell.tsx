@@ -36,7 +36,6 @@ export function ChatShell() {
     isLoading,
     votes,
     currentModelId,
-    setCurrentModelId,
     showCreditCardAlert,
     setShowCreditCardAlert,
   } = useActiveChat();
@@ -73,7 +72,6 @@ export function ChatShell() {
             <Messages
               addToolApprovalResponse={addToolApprovalResponse}
               chatId={chatId}
-
               isLoading={isLoading}
               isReadonly={isReadonly}
               messages={messages}
@@ -105,7 +103,6 @@ export function ChatShell() {
                     setEditingMessage(null);
                     setInput("");
                   }}
-                  onModelChange={setCurrentModelId}
                   selectedModelId={currentModelId}
                   selectedVisibilityType={visibilityType}
                   sendMessage={
