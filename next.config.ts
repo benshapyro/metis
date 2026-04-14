@@ -21,7 +21,6 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_BASE_PATH: basePath,
   },
-  cacheComponents: true,
   devIndicators: false,
   poweredByHeader: false,
   reactCompiler: true,
@@ -48,6 +47,10 @@ const nextConfig: NextConfig = {
     appNewScrollHandler: true,
     inlineCss: true,
     turbopackFileSystemCacheForDev: true,
+  },
+  outputFileTracingIncludes: {
+    '/api/chat': ['./wiki/wiki/**/*.md', './wiki/wiki/_meta/*.md'],
+    '/api/warm': ['./wiki/wiki/_meta/*.md'],
   },
 };
 
