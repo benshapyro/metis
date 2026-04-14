@@ -1,15 +1,7 @@
 import { get } from "@vercel/blob";
 import { type NextRequest, NextResponse } from "next/server";
 
-import { auth } from "@/app/(auth)/auth";
-
 export async function GET(request: NextRequest) {
-  const session = await auth();
-
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   const pathname = request.nextUrl.searchParams.get("pathname");
 
   if (!pathname) {
