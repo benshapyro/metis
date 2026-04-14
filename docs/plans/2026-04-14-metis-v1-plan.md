@@ -103,7 +103,9 @@ What will exist when v1 is shipped, and what each file owns:
 ## Execution Notes for the Implementer
 
 - Every task has TDD steps where testable (tools, remark plugin, token cap, filesystem helpers). Pure-UI tasks are verified via Playwright at the end.
-- **Branching:** single `main` branch during v1 build. Commit after every green task.
+- **Branching: one branch per phase.** Each of Phases 0–8 is built on its own branch (`feat/phase-0-preflight`, `feat/phase-1-scaffold`, `feat/phase-2-tools`, `feat/phase-3-prompt-agent`, `feat/phase-4-ui`, `feat/phase-5-safety`, `feat/phase-6-persistence`, `feat/phase-7-chat-wiring`, `feat/phase-8-deploy`). Commit after every green task *within* the phase branch.
+- **Phase close-out** (at the end of each phase): push the branch, `gh pr create`, run `/pr-review-toolkit:review-pr` on the PR, address any blockers, squash-merge to `main`, delete the branch, checkout `main` for the next phase. Each PR is a clean review unit.
+- **PR title convention:** `Phase N: <name>`. PR body must list: (a) tasks completed, (b) design-doc sections addressed, (c) risks/open items for the next phase.
 - **Never skip hooks** on commits.
 - **Never use `--no-verify`.**
 - When a command's expected output says "PASS" or "FAIL", that's the Vitest / Playwright pass/fail literal. If output differs, debug before moving on.
@@ -251,22 +253,64 @@ cd /Users/bshap/Projects/personal/my-brain-surface
 ```
 Expected: all template files now in the working dir; existing `docs/` and `scripts/` preserved.
 
-- [ ] **Step 3: Wire up the fork as `origin`**
+- [ ] **Step 3: Add origin, .gitignore, rebase our pre-fork commits onto template, branch as Phase 0, push**
+
+The fork already has the template on `main` (forks are clones of upstream), so we *rebase* our two pre-fork commits (preflight + cron) onto the template rather than push our own thinner main. The Phase 0 PR's diff = our commits relative to the template baseline.
 
 ```bash
-git remote add origin "$(gh repo view --json sshUrl -q .sshUrl)" 2>/dev/null || git remote set-url origin "$(cd /tmp/metis && gh repo view --json sshUrl -q .sshUrl)"
+cd /Users/bshap/Projects/personal/my-brain-surface
 git branch -M main
-git add .
-git commit -m "chore: import vercel/chatbot template as starting point"
-git push -u origin main
-```
-Expected: pushes all template files to your fork under branch `main`.
+FORK_URL="https://github.com/<your-gh>/metis.git"
+git remote add origin "$FORK_URL" 2>/dev/null || git remote set-url origin "$FORK_URL"
 
-- [ ] **Step 4: Clean up the /tmp fork clone**
+cat > .gitignore <<'EOF'
+node_modules/
+.next/
+.vercel/
+.env
+.env.local
+.env.*.local
+.superpowers/
+*.log
+EOF
+
+git fetch origin
+# Rebase our preflight + cron commits onto the template's main
+git rebase origin/main
+# Branch the result as Phase 0
+git checkout -b feat/phase-0-preflight
+# Reset local main back to the template baseline (origin/main) so phase PRs target a clean main
+git checkout main && git reset --hard origin/main
+git checkout feat/phase-0-preflight
+git push -u origin feat/phase-0-preflight
+```
+
+- [ ] **Step 4: Open Phase 0 PR**
 
 ```bash
-rm -rf /tmp/metis
+gh pr create --base main --head feat/phase-0-preflight \
+  --title "Phase 0: Preflight" \
+  --body "## Tasks completed
+
+- 0.1 — Preflight script + wiki coverage verified
+- 0.2 — Vercel Cron limits verified (Pro = 5-min OK)
+- 0.3 — Template imported, branch + .gitignore + workflow conventions
+
+## Design doc sections addressed
+- §10 (wiki source readiness)
+- §14 open items 3, 5
+
+## Risks / open items for next phase
+- Phase 1: wiki submodule, template strip, Neon+Upstash+Gateway, model IDs, Auth.js v5"
 ```
+
+- [ ] **Step 5: Clean up the temp fork clone**
+
+```bash
+rm -rf "$TMPFORK"   # whatever temp dir was used
+```
+
+**Phase 0 close-out**: run `/pr-review-toolkit:review-pr` against the PR; address any blockers; squash-merge to `main`; `git checkout main && git pull && git branch -d feat/phase-0-preflight`. Then start Phase 1 on a fresh branch.
 
 ---
 
