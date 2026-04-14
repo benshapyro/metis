@@ -572,6 +572,8 @@ Chat pane ─▶ Plan ─▶ Search ─▶ Rank ─▶ Read ─▶ Backlinks ─
 4. **Auth.js v5 Credentials provider for shared-password.** Template ships Auth.js v5; we need a one-provider `credentials()` config that validates `APP_PASSWORD` and sets a JWE session cookie matching the D22 spec. Delete other providers shipped in the template (GitHub, etc).
 5. **Verify Vercel Cron concurrency + frequency limits** for the `/api/warm` schedule (5-min pre-warm ping). Subagent was unable to fetch the current limits page; confirm before committing to a cron frequency.
 
+    **Finding (2026-04-14):** Per Vercel's [Cron Jobs Usage & Pricing](https://vercel.com/docs/cron-jobs/usage-and-pricing) page, Pro and Enterprise plans allow a minimum interval of "Once per minute" with per-minute scheduling precision and up to 100 cron jobs per project; Hobby is capped at "Once per day" and will fail deployment on sub-daily expressions. Confirmed — a 5-minute cron on `/api/warm` is viable on Pro (the intended plan for this project). Cron invocations are billed as ordinary Vercel Function executions, so the only cost dimension is function invocations/GB-hours, not a separate cron quota.
+
 ### Deferrable (v1 polish or v1.5)
 5. First-pass prompt text for the grounding gate + clarification turn — drafted during v1 day 3, iterated against eval set.
 6. Initial `search_pages` ranking weights — tune with first 20 real queries.
