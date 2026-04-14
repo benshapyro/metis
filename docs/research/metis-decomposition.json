@@ -1,0 +1,176 @@
+{
+  "system_name": "Metis — Cadre Knowledge Chat Surface",
+  "patterns": [
+    {
+      "id": "human_authenticate",
+      "name": "Authenticate / Identify",
+      "type": "human",
+      "layer": "inbound",
+      "constraints": [],
+      "downstream": ["system_session"],
+      "upstream": []
+    },
+    {
+      "id": "human_type_input",
+      "name": "Type Input",
+      "type": "human",
+      "layer": "inbound",
+      "constraints": [],
+      "downstream": ["task_plan"],
+      "upstream": ["human_authenticate"]
+    },
+    {
+      "id": "system_session",
+      "name": "Session Manager",
+      "type": "system",
+      "layer": "interactive",
+      "constraints": [{"id": "const_rate_limit", "value": "30/hr/session"}],
+      "downstream": ["human_type_input", "system_read_db"],
+      "upstream": ["human_authenticate"]
+    },
+    {
+      "id": "system_read_db",
+      "name": "Read Record",
+      "type": "system",
+      "layer": "inbound",
+      "constraints": [],
+      "downstream": ["task_plan"],
+      "upstream": ["system_session"]
+    },
+    {
+      "id": "task_plan",
+      "name": "Plan",
+      "type": "ai",
+      "layer": "interactive",
+      "constraints": [{"id": "const_timeout", "value": "stopWhen stepCountIs(12)"}],
+      "downstream": ["task_retrieve", "system_rules"],
+      "upstream": ["human_type_input", "system_read_db"]
+    },
+    {
+      "id": "task_retrieve",
+      "name": "Retrieve",
+      "type": "ai",
+      "layer": "inbound",
+      "constraints": [{"id": "const_cost_budget", "value": "100K tokens/turn"}],
+      "downstream": ["task_rank", "task_verify"],
+      "upstream": ["task_plan"]
+    },
+    {
+      "id": "task_rank",
+      "name": "Rank",
+      "type": "ai",
+      "layer": "internal",
+      "constraints": [],
+      "downstream": ["task_verify"],
+      "upstream": ["task_retrieve"]
+    },
+    {
+      "id": "task_verify",
+      "name": "Verify",
+      "type": "ai",
+      "layer": "internal",
+      "constraints": [{"id": "const_citation", "value": "required inline [[slug]]"}],
+      "downstream": ["system_rules"],
+      "upstream": ["task_retrieve", "task_rank"]
+    },
+    {
+      "id": "system_rules",
+      "name": "Logic Gate",
+      "type": "system",
+      "layer": "internal",
+      "constraints": [{"id": "const_confidence", "value": "grounding gate: 'no sources' if empty"}],
+      "downstream": ["task_synthesize", "task_generate"],
+      "upstream": ["task_verify", "task_plan"]
+    },
+    {
+      "id": "task_synthesize",
+      "name": "Synthesize",
+      "type": "ai",
+      "layer": "internal",
+      "constraints": [{"id": "const_citation", "value": "every factual claim"}],
+      "downstream": ["task_generate"],
+      "upstream": ["system_rules"]
+    },
+    {
+      "id": "task_generate",
+      "name": "Generate",
+      "type": "ai",
+      "layer": "outbound",
+      "constraints": [{"id": "const_latency", "value": "streaming; TTFB <30s"}],
+      "downstream": ["task_transform", "system_create_db"],
+      "upstream": ["task_synthesize", "system_rules"]
+    },
+    {
+      "id": "task_transform",
+      "name": "Transform",
+      "type": "ai",
+      "layer": "outbound",
+      "constraints": [],
+      "downstream": ["human_review"],
+      "upstream": ["task_generate"]
+    },
+    {
+      "id": "human_review",
+      "name": "Review & Approve",
+      "type": "human",
+      "layer": "interactive",
+      "constraints": [],
+      "downstream": ["human_provide_feedback"],
+      "upstream": ["task_transform"]
+    },
+    {
+      "id": "human_provide_feedback",
+      "name": "Provide Feedback",
+      "type": "human",
+      "layer": "interactive",
+      "constraints": [],
+      "downstream": ["system_create_db", "system_log"],
+      "upstream": ["human_review"]
+    },
+    {
+      "id": "system_create_db",
+      "name": "Create Record",
+      "type": "system",
+      "layer": "outbound",
+      "constraints": [{"id": "const_audit_log", "value": "every message + feedback + trace"}],
+      "downstream": [],
+      "upstream": ["task_generate", "human_provide_feedback"]
+    },
+    {
+      "id": "system_log",
+      "name": "Log Event",
+      "type": "system",
+      "layer": "outbound",
+      "constraints": [{"id": "const_audit_log", "value": "retrieval_trace"}],
+      "downstream": [],
+      "upstream": ["human_provide_feedback", "task_retrieve"]
+    },
+    {
+      "id": "system_monitor_model",
+      "name": "Model Monitor",
+      "type": "system",
+      "layer": "interactive",
+      "constraints": [{"id": "const_cost_budget", "value": "$10/day alert via Gateway"}],
+      "downstream": [],
+      "upstream": ["task_generate"]
+    }
+  ],
+  "data_flows": [
+    {"from": "human_type_input", "to": "task_plan", "artifact": "text_prompt"},
+    {"from": "system_read_db", "to": "task_plan", "artifact": "thread_history"},
+    {"from": "task_plan", "to": "task_retrieve", "artifact": "tool_plan"},
+    {"from": "task_retrieve", "to": "task_rank", "artifact": "candidate_pages"},
+    {"from": "task_rank", "to": "task_verify", "artifact": "ranked_pages"},
+    {"from": "task_verify", "to": "system_rules", "artifact": "verified_claims"},
+    {"from": "system_rules", "to": "task_synthesize", "artifact": "grounded_context"},
+    {"from": "task_synthesize", "to": "task_generate", "artifact": "draft_answer"},
+    {"from": "task_generate", "to": "task_transform", "artifact": "markdown_stream"},
+    {"from": "task_transform", "to": "human_review", "artifact": "rendered_message"},
+    {"from": "human_review", "to": "human_provide_feedback", "artifact": "user_signal"},
+    {"from": "task_generate", "to": "system_create_db", "artifact": "ui_message"},
+    {"from": "human_provide_feedback", "to": "system_create_db", "artifact": "feedback_record"},
+    {"from": "task_retrieve", "to": "system_log", "artifact": "retrieval_trace"},
+    {"from": "task_generate", "to": "system_monitor_model", "artifact": "model_usage_metrics"}
+  ],
+  "touchpoints": ["web_app"]
+}
