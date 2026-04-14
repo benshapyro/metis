@@ -51,6 +51,7 @@ export async function POST(request: Request) {
     try {
       const data = await put(`${safeName}`, fileBuffer, {
         access: "private",
+        addRandomSuffix: true,
       });
 
       return NextResponse.json({
