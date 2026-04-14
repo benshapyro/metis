@@ -40,7 +40,6 @@ const nextConfig: NextConfig = {
     localPatterns: [
       {
         pathname: "/api/files/serve",
-        search: "?pathname=*",
       },
     ],
   },
