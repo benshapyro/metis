@@ -566,6 +566,8 @@ git commit -m "feat(models): replace template model list with Sonnet 4.6 + Opus 
 - Modify: `app/(auth)/login/page.tsx` (template ships one — we simplify to password-only)
 - Create: `.env.local` additions
 
+> **Deviation (applied in commit `35d000a`):** The plan below describes a custom `sessionId` field set via `jwt`/`session` callbacks. The actual implementation keeps the template's existing `session.user.id` (a `randomUUID()` set by the Credentials provider's `authorize` return value) instead of introducing a new `sessionId` field. **Everywhere downstream tasks say `(session as any).sessionId as string`, use `session.user.id` instead.** Functionally equivalent; one less type-augmentation layer. The Postgres `session_id` column name stays the same (it's scoped by session-cookie, not user-identity, regardless of where the value comes from).
+
 - [ ] **Step 1: Generate a cookie signing secret**
 
 ```bash
