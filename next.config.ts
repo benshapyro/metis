@@ -38,7 +38,7 @@ const nextConfig: NextConfig = {
   },
   experimental: {
     prefetchInlining: true,
-    cachedNavigations: true,
+    // cachedNavigations removed: requires cacheComponents, which we don't use (chat is all-dynamic; see design §9.4)
     appNewScrollHandler: true,
     inlineCss: true,
     turbopackFileSystemCacheForDev: true,
