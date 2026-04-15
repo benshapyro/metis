@@ -14,3 +14,5 @@ export type { ReadPageData } from './read-page';
 
 export { readFrontmatterTool, readFrontmatter } from './read-frontmatter';
 export type { ReadFrontmatterData } from './read-frontmatter';
+
+export { listPagesTool, listPages } from './list-pages';
