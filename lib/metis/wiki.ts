@@ -26,8 +26,23 @@ const SEARCH_DIRS = [
 ];
 
 /**
+ * Returns true iff `candidate` is inside `root` (same dir or deeper).
+ * Both paths are resolved before comparison to eliminate symlink / `..` tricks.
+ */
+function withinRoot(candidate: string, root: string): boolean {
+  const resolved = path.resolve(candidate);
+  const resolvedRoot = path.resolve(root);
+  return (
+    resolved === resolvedRoot || resolved.startsWith(resolvedRoot + path.sep)
+  );
+}
+
+/**
  * Resolve a slug like 'shaping-overview' or 'acme/engagement-notes' to an
  * absolute path. Returns null if not found.
+ *
+ * Only paths that remain inside wikiRoot() are returned — slugs containing
+ * path-traversal sequences will never resolve to a file outside the root.
  */
 export function resolveSlug(slug: string): string | null {
   const root = wikiRoot();
@@ -36,7 +51,7 @@ export function resolveSlug(slug: string): string | null {
   // Try direct path for nested slugs
   if (parts.length > 1) {
     const direct = path.join(root, `${slug}.md`);
-    if (fsSync.existsSync(direct)) {
+    if (withinRoot(direct, root) && fsSync.existsSync(direct)) {
       return direct;
     }
   }
@@ -46,42 +61,13 @@ export function resolveSlug(slug: string): string | null {
   const maybeSubdir = parts.length > 1 ? parts.slice(0, -1).join("/") : "";
   for (const dir of SEARCH_DIRS) {
     const candidate = path.join(root, dir, maybeSubdir, `${basename}.md`);
-    if (fsSync.existsSync(candidate)) {
+    if (withinRoot(candidate, root) && fsSync.existsSync(candidate)) {
       return candidate;
     }
   }
 
-  // Fall back to recursive search
-  return walkFor(root, `${basename}.md`);
-}
-
-function walkFor(dir: string, filename: string): string | null {
-  let entries: fsSync.Dirent[];
-  try {
-    entries = fsSync.readdirSync(dir, { withFileTypes: true });
-  } catch (err: unknown) {
-    const code = (err as NodeJS.ErrnoException)?.code;
-    if (code === "ENOENT") {
-      return null;
-    }
-    console.error(`[wiki.walkFor] readdir failed for ${dir}:`, code ?? err);
-    return null;
-  }
-
-  for (const e of entries) {
-    if (e.name.startsWith(".") || e.name === "node_modules") {
-      continue;
-    }
-    const full = path.join(dir, e.name);
-    if (e.isDirectory()) {
-      const hit = walkFor(full, filename);
-      if (hit) {
-        return hit;
-      }
-    } else if (e.name === filename) {
-      return full;
-    }
-  }
+  // walkFor fallback removed: SEARCH_DIRS covers all known wiki layouts.
+  // If a future page lives outside these dirs, add the dir to SEARCH_DIRS.
   return null;
 }
 
@@ -89,23 +75,27 @@ export function pageExists(slug: string): boolean {
   return resolveSlug(slug) !== null;
 }
 
-export async function safeReadMarkdown(slug: string): Promise<string | null> {
+export type ReadResult =
+  | { ok: true; content: string }
+  | { ok: false; reason: "not_found" | "error"; detail?: string };
+
+export async function safeReadMarkdown(slug: string): Promise<ReadResult> {
   const p = resolveSlug(slug);
   if (!p) {
-    return null;
+    return { ok: false, reason: "not_found" };
   }
   try {
-    return await fs.readFile(p, "utf8");
+    return { ok: true, content: await fs.readFile(p, "utf8") };
   } catch (err: unknown) {
     const code = (err as NodeJS.ErrnoException)?.code;
     if (code === "ENOENT") {
-      return null;
+      return { ok: false, reason: "not_found" };
     }
     console.error(
       `[wiki.safeReadMarkdown] readFile failed for ${slug} (${p}):`,
       code ?? err
     );
-    return null;
+    return { ok: false, reason: "error", detail: code ?? String(err) };
   }
 }
 

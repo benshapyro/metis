@@ -32,26 +32,72 @@ export function SourcePanel({ openSlug, onClose }: Props) {
       setError(null);
       return;
     }
+
+    const ac = new AbortController();
+    let cancelled = false;
+
     setLoading(true);
     setError(null);
-    fetch(`/api/pages/${encodeURIComponent(openSlug)}`)
-      .then((r) => {
+    setPage(null); // clear stale content immediately when slug changes
+
+    (async () => {
+      try {
+        const r = await fetch(`/api/pages/${encodeURIComponent(openSlug)}`, {
+          signal: ac.signal,
+        });
+        if (cancelled) {
+          return;
+        }
+
         if (r.status === 404) {
           setError("This page no longer exists in the wiki.");
-          return null;
+          return;
         }
         if (!r.ok) {
-          setError("Failed to load source.");
-          return null;
+          let detail = `HTTP ${r.status}`;
+          try {
+            const body = await r.json();
+            if (body?.error) {
+              detail = String(body.error);
+            }
+          } catch {
+            // body wasn't JSON; keep the HTTP status
+          }
+          if (r.status === 401) {
+            setError("Your session expired. Please sign in again.");
+          } else if (detail === "malformed") {
+            setError(
+              "This page has invalid frontmatter and cannot be displayed."
+            );
+          } else if (detail === "timeout") {
+            setError("Loading this page timed out. Try again.");
+          } else {
+            setError(`Could not load source (${detail}).`);
+          }
+          return;
         }
-        return r.json() as Promise<PageData>;
-      })
-      .then((p) => {
-        if (p) {
+
+        const p = (await r.json()) as PageData;
+        if (!cancelled) {
           setPage(p);
         }
-      })
-      .finally(() => setLoading(false));
+      } catch (err) {
+        if (cancelled || (err as { name?: string })?.name === "AbortError") {
+          return;
+        }
+        console.error("[SourcePanel] fetch failed", err);
+        setError("Could not load source. Check your connection and try again.");
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      ac.abort();
+    };
   }, [openSlug]);
 
   return (

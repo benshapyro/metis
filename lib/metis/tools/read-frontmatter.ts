@@ -1,7 +1,7 @@
-import { tool } from 'ai';
-import { z } from 'zod';
-import { parseFrontmatter, safeReadMarkdown } from '@/lib/metis/wiki';
-import type { ToolResult } from './index';
+import { tool } from "ai";
+import { z } from "zod";
+import { parseFrontmatter, safeReadMarkdown } from "@/lib/metis/wiki";
+import type { ToolResult } from "./index";
 
 const MAX_PARAGRAPH_BYTES = 2 * 1024;
 
@@ -11,19 +11,30 @@ export interface ReadFrontmatterData {
   first_paragraph: string;
 }
 
-export async function readFrontmatter(input: { slug: string }): Promise<ToolResult<ReadFrontmatterData>> {
-  const raw = await safeReadMarkdown(input.slug);
-  if (raw === null) return { ok: false, reason: 'not_found' };
-  const { frontmatter, body } = parseFrontmatter(raw);
-  const afterTitle = body.replace(/^#\s[^\n]*\n+/, '');
-  const firstPara = afterTitle.split(/\n\s*\n/, 1)[0] ?? '';
+export async function readFrontmatter(input: {
+  slug: string;
+}): Promise<ToolResult<ReadFrontmatterData>> {
+  const res = await safeReadMarkdown(input.slug);
+  if (!res.ok) {
+    return {
+      ok: false,
+      reason: res.reason,
+      ...(res.detail ? { detail: res.detail } : {}),
+    };
+  }
+  const { frontmatter, body } = parseFrontmatter(res.content);
+  const afterTitle = body.replace(/^#\s[^\n]*\n+/, "");
+  const firstPara = afterTitle.split(/\n\s*\n/, 1)[0] ?? "";
   const capped = firstPara.slice(0, MAX_PARAGRAPH_BYTES);
-  return { ok: true, data: { slug: input.slug, frontmatter, first_paragraph: capped } };
+  return {
+    ok: true,
+    data: { slug: input.slug, frontmatter, first_paragraph: capped },
+  };
 }
 
 export const readFrontmatterTool = tool({
   description:
-    'Cheap peek at a page: frontmatter and first paragraph only. Use for triage before full read.',
+    "Cheap peek at a page: frontmatter and first paragraph only. Use for triage before full read.",
   inputSchema: z.object({ slug: z.string() }),
   execute: readFrontmatter,
 });

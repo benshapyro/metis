@@ -125,6 +125,19 @@ export function AssistantMessage({ message, onOpenSource }: Props) {
               );
             }
             if (pillState === "output-available") {
+              const out = p.output as
+                | { ok?: boolean; reason?: string }
+                | undefined;
+              if (out && out.ok === false) {
+                return (
+                  <ToolStepPill
+                    key={key}
+                    label={`${name}: ${out.reason ?? "failed"}`}
+                    name={name}
+                    state="output-error"
+                  />
+                );
+              }
               return (
                 <ToolStepPill
                   key={key}
