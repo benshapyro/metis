@@ -1,44 +1,50 @@
 import { createAgentUIStreamResponse } from "ai";
-import { after } from "next/server";
-import { createResumableStreamContext } from "resumable-stream";
 import { auth } from "@/app/(auth)/auth";
 import { deleteChatById, getChatById } from "@/lib/db/queries";
 import { ChatbotError } from "@/lib/errors";
-import { makeMetisAgent } from "@/lib/metis/agent";
+import { type MetisAgent, makeMetisAgent } from "@/lib/metis/agent";
 
+// Node runtime required: tools spawn pure-JS file walks via fs.readFile.
+// maxDuration tied to stopWhen: stepCountIs(12) in agent.ts — keep them aligned;
+// raising the step cap without bumping maxDuration causes mid-stream timeouts.
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-function getStreamContext() {
-  try {
-    return createResumableStreamContext({ waitUntil: after });
-  } catch (_) {
-    return null;
-  }
-}
-
-export { getStreamContext };
-
 export async function POST(request: Request) {
   const session = await auth();
-  if (!session?.user) {
+  if (!session) {
     return new ChatbotError("unauthorized:chat").toResponse();
   }
 
   let messages: unknown[];
   try {
     const body = await request.json();
-    messages = body.messages ?? [];
-  } catch (_) {
-    return new ChatbotError("bad_request:api").toResponse();
+    if (!Array.isArray(body?.messages)) {
+      return new ChatbotError(
+        "bad_request:api",
+        "messages must be an array"
+      ).toResponse();
+    }
+    messages = body.messages;
+  } catch (err) {
+    console.error("[chat.POST] failed to parse request body:", err);
+    return new ChatbotError("bad_request:api", String(err)).toResponse();
   }
 
-  const agent = await makeMetisAgent();
+  let agent: MetisAgent;
+  try {
+    agent = await makeMetisAgent();
+  } catch (err) {
+    console.error("[chat.POST] makeMetisAgent failed:", err);
+    return new ChatbotError("offline:chat", String(err)).toResponse();
+  }
 
-  return createAgentUIStreamResponse({
-    agent,
-    uiMessages: messages,
-  });
+  try {
+    return createAgentUIStreamResponse({ agent, uiMessages: messages });
+  } catch (err) {
+    console.error("[chat.POST] createAgentUIStreamResponse failed:", err);
+    return new ChatbotError("offline:chat", String(err)).toResponse();
+  }
 }
 
 export async function DELETE(request: Request) {

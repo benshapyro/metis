@@ -11,9 +11,19 @@ import {
 import { systemPromptString } from "./prompt";
 
 export async function makeMetisAgent() {
+  const systemText = await systemPromptString();
   return new ToolLoopAgent({
     model: getLanguageModel(METIS_MODELS.synthesize),
-    instructions: await systemPromptString(),
+    instructions: {
+      role: "system",
+      content: systemText,
+      // 1h ephemeral cache on the static system prefix. Stable across turns; hot
+      // caches change slowly (refreshed via /api/warm). Amortizes 50K-token preload
+      // over a session — verify with providerMetadata.anthropic.cacheCreationInputTokens.
+      providerOptions: {
+        anthropic: { cacheControl: { type: "ephemeral" } },
+      },
+    },
     tools: {
       search_pages: searchPagesTool,
       read_page: readPageTool,
@@ -22,11 +32,6 @@ export async function makeMetisAgent() {
       get_backlinks: getBacklinksTool,
     },
     stopWhen: stepCountIs(12),
-    providerOptions: {
-      anthropic: {
-        cacheControl: { type: "ephemeral", ttl: "1h" },
-      },
-    },
   });
 }
 
