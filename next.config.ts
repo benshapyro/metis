@@ -1,4 +1,3 @@
-import { withBotId } from "botid/next/config";
 import type { NextConfig } from "next";
 
 const basePath = process.env.IS_DEMO === "1" ? "/demo" : "";
@@ -21,7 +20,6 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_BASE_PATH: basePath,
   },
-  cacheComponents: true,
   devIndicators: false,
   poweredByHeader: false,
   reactCompiler: true,
@@ -36,19 +34,19 @@ const nextConfig: NextConfig = {
       {
         hostname: "avatar.vercel.sh",
       },
-      {
-        protocol: "https",
-        hostname: "*.public.blob.vercel-storage.com",
-      },
     ],
   },
   experimental: {
     prefetchInlining: true,
-    cachedNavigations: true,
+    // cachedNavigations removed: requires cacheComponents, which we don't use (chat is all-dynamic; see design §9.4)
     appNewScrollHandler: true,
     inlineCss: true,
     turbopackFileSystemCacheForDev: true,
   },
+  outputFileTracingIncludes: {
+    '/api/chat': ['./wiki/wiki/**/*.md', './wiki/wiki/_meta/*.md'],
+    '/api/warm': ['./wiki/wiki/_meta/*.md'],
+  },
 };
 
-export default withBotId(nextConfig);
+export default nextConfig;

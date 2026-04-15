@@ -1,51 +1,39 @@
-import { type NextRequest, NextResponse } from "next/server";
-import { getToken } from "next-auth/jwt";
-import { guestRegex, isDevelopmentEnvironment } from "./lib/constants";
+// proxy.ts — Next 16 Node-runtime request guard (replaces middleware.ts)
+// Redirects unauthenticated requests to /login; passes through public paths.
 
-export async function proxy(request: NextRequest) {
-  const { pathname } = request.nextUrl;
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
+import type { Session } from "next-auth";
+import { auth } from "./app/(auth)/auth";
 
-  if (pathname.startsWith("/ping")) {
-    return new Response("pong", { status: 200 });
-  }
+const PUBLIC_PATHS = ["/login", "/api/auth", "/api/warm"] as const;
 
-  if (pathname.startsWith("/api/auth")) {
+export default async function proxy(req: NextRequest) {
+  const { pathname } = req.nextUrl;
+  const isPublic = PUBLIC_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`)
+  );
+  if (isPublic) {
     return NextResponse.next();
   }
 
-  const token = await getToken({
-    req: request,
-    secret: process.env.AUTH_SECRET,
-    secureCookie: !isDevelopmentEnvironment,
-  });
-
-  const base = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-
-  if (!token) {
-    const redirectUrl = encodeURIComponent(new URL(request.url).pathname);
-
-    return NextResponse.redirect(
-      new URL(`${base}/api/auth/guest?redirectUrl=${redirectUrl}`, request.url)
-    );
+  let session: Session | null;
+  try {
+    session = await auth();
+  } catch (err) {
+    console.error("[proxy] auth() failed", err);
+    const url = new URL("/login", req.url);
+    url.searchParams.set("error", "session_invalid");
+    return NextResponse.redirect(url);
   }
-
-  const isGuest = guestRegex.test(token?.email ?? "");
-
-  if (token && !isGuest && ["/login", "/register"].includes(pathname)) {
-    return NextResponse.redirect(new URL(`${base}/`, request.url));
+  if (!session) {
+    const url = new URL("/login", req.url);
+    url.searchParams.set("callbackUrl", pathname);
+    return NextResponse.redirect(url);
   }
-
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: [
-    "/",
-    "/chat/:id",
-    "/api/:path*",
-    "/login",
-    "/register",
-
-    "/((?!_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt).*)",
-  ],
+  matcher: ["/((?!_next/|favicon.ico|.*\\..*).*)"],
 };

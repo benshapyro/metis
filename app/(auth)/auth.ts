@@ -1,12 +1,14 @@
-import { compare } from "bcrypt-ts";
+// app/(auth)/auth.ts
+// Single-password Credentials provider for shared-access demo auth (Metis v1).
+// No DB session storage — JWT strategy with JWE cookies.
+
+import { randomUUID } from "node:crypto";
 import NextAuth, { type DefaultSession } from "next-auth";
 import type { DefaultJWT } from "next-auth/jwt";
 import Credentials from "next-auth/providers/credentials";
-import { DUMMY_PASSWORD } from "@/lib/constants";
-import { createGuestUser, getUser } from "@/lib/db/queries";
-import { authConfig } from "./auth.config";
 
-export type UserType = "guest" | "regular";
+// In v1 every authenticated user is "regular"; guest access is removed.
+export type UserType = "regular";
 
 declare module "next-auth" {
   interface Session extends DefaultSession {
@@ -30,61 +32,56 @@ declare module "next-auth/jwt" {
   }
 }
 
+const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
+
 export const {
   handlers: { GET, POST },
   auth,
   signIn,
   signOut,
 } = NextAuth({
-  ...authConfig,
   providers: [
     Credentials({
+      name: "Metis",
       credentials: {
-        email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials) {
-        const email = String(credentials.email ?? "");
-        const password = String(credentials.password ?? "");
-        const users = await getUser(email);
-
-        if (users.length === 0) {
-          await compare(password, DUMMY_PASSWORD);
+      authorize(credentials) {
+        const password = String(credentials?.password ?? "");
+        if (!password || password !== process.env.APP_PASSWORD) {
           return null;
         }
-
-        const [user] = users;
-
-        if (!user.password) {
-          await compare(password, DUMMY_PASSWORD);
-          return null;
-        }
-
-        const passwordsMatch = await compare(password, user.password);
-
-        if (!passwordsMatch) {
-          return null;
-        }
-
-        return { ...user, type: "regular" };
-      },
-    }),
-    Credentials({
-      id: "guest",
-      credentials: {},
-      async authorize() {
-        const [guestUser] = await createGuestUser();
-        return { ...guestUser, type: "guest" };
+        return {
+          id: randomUUID(),
+          name: "Metis user",
+          email: "session@metis.local",
+          type: "regular" as UserType,
+        };
       },
     }),
   ],
+  session: {
+    strategy: "jwt",
+    maxAge: SESSION_TTL_SECONDS,
+    updateAge: 60 * 60, // roll cookie hourly
+  },
+  cookies: {
+    sessionToken: {
+      name: "metis.session",
+      options: {
+        httpOnly: true,
+        sameSite: "strict",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+      },
+    },
+  },
   callbacks: {
     jwt({ token, user }) {
       if (user) {
         token.id = user.id as string;
-        token.type = user.type;
+        token.type = (user as { type: UserType }).type;
       }
-
       return token;
     },
     session({ session, token }) {
@@ -92,8 +89,11 @@ export const {
         session.user.id = token.id;
         session.user.type = token.type;
       }
-
       return session;
     },
   },
+  pages: { signIn: "/login" },
+  secret: process.env.AUTH_SECRET,
+  basePath: "/api/auth",
+  trustHost: true,
 });
