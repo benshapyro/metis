@@ -3,6 +3,16 @@ import { auth } from "@/app/(auth)/auth";
 import { deleteChatById, getChatById } from "@/lib/db/queries";
 import { ChatbotError } from "@/lib/errors";
 import { type MetisAgent, makeMetisAgent } from "@/lib/metis/agent";
+import {
+  enforceRateLimit,
+  type RateLimitDenied,
+  type RateLimitResult,
+} from "@/lib/safety/ratelimit";
+import {
+  enforceSpendCap,
+  type SpendCheckDenied,
+  type SpendCheckOk,
+} from "@/lib/safety/spend-cap";
 
 // Node runtime required: tools spawn pure-JS file walks via fs.readFile.
 // maxDuration tied to stopWhen: stepCountIs(12) in agent.ts — keep them aligned;
@@ -12,8 +22,49 @@ export const maxDuration = 60;
 
 export async function POST(request: Request) {
   const session = await auth();
-  if (!session) {
-    return new ChatbotError("unauthorized:chat").toResponse();
+  if (!session?.user) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  const sessionId = session.user.id;
+  const xff = request.headers.get("x-forwarded-for") ?? "";
+  const ip = xff.split(",")[0]?.trim() || "unknown";
+
+  let rl: RateLimitResult | RateLimitDenied;
+  try {
+    rl = await enforceRateLimit({ sessionId, ip });
+  } catch (err) {
+    console.error("[chat.POST] rate limiter unavailable:", err);
+    return new Response(
+      "Safety checks temporarily unavailable. Please retry in a minute.",
+      {
+        status: 503,
+        headers: { "Retry-After": "30" },
+      }
+    );
+  }
+  if (!rl.ok) {
+    return new Response(rl.message, {
+      status: 429,
+      headers: { "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) },
+    });
+  }
+
+  let spend: SpendCheckOk | SpendCheckDenied;
+  try {
+    spend = await enforceSpendCap();
+  } catch (err) {
+    console.error("[chat.POST] spend cap unavailable:", err);
+    return new Response(
+      "Safety checks temporarily unavailable. Please retry in a minute.",
+      {
+        status: 503,
+        headers: { "Retry-After": "30" },
+      }
+    );
+  }
+  if (!spend.ok) {
+    return new Response(spend.message, { status: 429 });
   }
 
   let messages: unknown[];
@@ -40,6 +91,9 @@ export async function POST(request: Request) {
   }
 
   try {
+    // TODO(phase-6): wire onFinish to call recordSpend(estimateCostUSD(usage)).
+    // Until then, the spend cap is decorative — counter is never incremented.
+    // DO NOT promote to production before Phase 6 lands.
     return createAgentUIStreamResponse({ agent, uiMessages: messages });
   } catch (err) {
     console.error("[chat.POST] createAgentUIStreamResponse failed:", err);
