@@ -1,164 +1,80 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { useState } from "react";
+import { Composer } from "@/components/metis/composer";
+import { Feedback } from "@/components/metis/feedback";
+import { AssistantMessage } from "@/components/metis/message";
+import { SourcePanel } from "@/components/metis/source-panel";
+import { Welcome } from "@/components/metis/welcome";
 import { useActiveChat } from "@/hooks/use-active-chat";
-import type { ChatMessage } from "@/lib/types";
-import { ChatHeader } from "./chat-header";
+import type { MetisUIMessage } from "@/lib/metis/agent";
 import { DataStreamHandler } from "./data-stream-handler";
-import { submitEditedMessage } from "./message-editor";
-import { Messages } from "./messages";
-import { MultimodalInput } from "./multimodal-input";
 
 export function ChatShell() {
-  const {
-    chatId,
-    messages,
-    setMessages,
-    sendMessage,
-    status,
-    stop,
-    regenerate,
-    addToolApprovalResponse,
-    input,
-    setInput,
-    visibilityType,
-    isReadonly,
-    isLoading,
-    votes,
-    currentModelId,
-    showCreditCardAlert,
-    setShowCreditCardAlert,
-  } = useActiveChat();
+  const { messages, sendMessage, status } = useActiveChat();
+  const [openSource, setOpenSource] = useState<string | null>(null);
 
-  const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(
-    null
-  );
+  // Guard submission during both "submitted" (request sent, no chunks yet) and
+  // "streaming" phases to prevent duplicate user turns from rapid double-clicks.
+  const busy = status === "submitted" || status === "streaming";
 
-  const stopRef = useRef(stop);
-  stopRef.current = stop;
-
-  const prevChatIdRef = useRef(chatId);
-  useEffect(() => {
-    if (prevChatIdRef.current !== chatId) {
-      prevChatIdRef.current = chatId;
-      stopRef.current();
-      setEditingMessage(null);
+  const submit = (text: string) => {
+    if (!text.trim() || busy) {
+      return;
     }
-  }, [chatId]);
+    sendMessage({ role: "user" as const, parts: [{ type: "text", text }] });
+  };
 
   return (
     <>
-      <div className="flex h-dvh w-full flex-row overflow-hidden">
-        <div className="flex min-w-0 w-full flex-col bg-sidebar">
-          <ChatHeader
-            chatId={chatId}
-            isReadonly={isReadonly}
-            selectedVisibilityType={visibilityType}
-          />
-
-          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-background md:rounded-tl-[12px] md:border-t md:border-l md:border-border/40">
-            <Messages
-              addToolApprovalResponse={addToolApprovalResponse}
-              chatId={chatId}
-              isLoading={isLoading}
-              isReadonly={isReadonly}
-              messages={messages}
-              onEditMessage={(msg) => {
-                const text = msg.parts
-                  ?.filter((p) => p.type === "text")
-                  .map((p) => p.text)
-                  .join("");
-                setInput(text ?? "");
-                setEditingMessage(msg);
-              }}
-              regenerate={regenerate}
-              selectedModelId={currentModelId}
-              setMessages={setMessages}
-              status={status}
-              votes={votes}
-            />
-
-            <div className="sticky bottom-0 z-1 mx-auto flex w-full max-w-4xl gap-2 border-t-0 bg-background px-2 pb-3 md:px-4 md:pb-4">
-              {!isReadonly && (
-                <MultimodalInput
-                  chatId={chatId}
-                  editingMessage={editingMessage}
-                  input={input}
-                  isLoading={isLoading}
-                  messages={messages}
-                  onCancelEdit={() => {
-                    setEditingMessage(null);
-                    setInput("");
-                  }}
-                  selectedModelId={currentModelId}
-                  selectedVisibilityType={visibilityType}
-                  sendMessage={
-                    editingMessage
-                      ? async () => {
-                          const msg = editingMessage;
-                          setEditingMessage(null);
-                          await submitEditedMessage({
-                            message: msg,
-                            text: input,
-                            setMessages,
-                            regenerate,
-                          });
-                          setInput("");
-                        }
-                      : sendMessage
-                  }
-                  setInput={setInput}
-                  setMessages={setMessages}
-                  status={status}
-                  stop={stop}
-                />
+      <div className="flex flex-col h-dvh w-full">
+        <main className="flex-1 overflow-y-auto">
+          {messages.length === 0 ? (
+            <Welcome onStart={submit} />
+          ) : (
+            <div className="mx-auto max-w-3xl p-4 space-y-6">
+              {messages.map((m) => {
+                const msg = m as MetisUIMessage;
+                return (
+                  <div className="space-y-2" key={msg.id}>
+                    <div className="text-xs uppercase text-muted-foreground">
+                      {msg.role}
+                    </div>
+                    {msg.role === "assistant" ? (
+                      <>
+                        <AssistantMessage
+                          message={msg}
+                          onOpenSource={setOpenSource}
+                        />
+                        <Feedback messageId={msg.id} />
+                      </>
+                    ) : (
+                      <div className="prose prose-sm dark:prose-invert">
+                        {msg.parts.map((p, i) =>
+                          p.type === "text" ? (
+                            <p key={i}>
+                              {(p as { type: "text"; text: string }).text}
+                            </p>
+                          ) : null
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {busy && (
+                <div className="text-xs text-muted-foreground">
+                  Metis is thinking…
+                </div>
               )}
             </div>
-          </div>
-        </div>
+          )}
+        </main>
+        <Composer disabled={busy} onSubmit={submit} />
       </div>
 
+      <SourcePanel onClose={() => setOpenSource(null)} openSlug={openSource} />
       <DataStreamHandler />
-
-      <AlertDialog
-        onOpenChange={setShowCreditCardAlert}
-        open={showCreditCardAlert}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Activate AI Gateway</AlertDialogTitle>
-            <AlertDialogDescription>
-              This application requires{" "}
-              {process.env.NODE_ENV === "production" ? "the owner" : "you"} to
-              activate Vercel AI Gateway.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                window.open(
-                  "https://vercel.com/d?to=%2F%5Bteam%5D%2F%7E%2Fai%3Fmodal%3Dadd-credit-card",
-                  "_blank"
-                );
-                window.location.href = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/`;
-              }}
-            >
-              Activate
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 }
