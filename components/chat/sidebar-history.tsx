@@ -1,6 +1,7 @@
 "use client";
 
 import { isToday, isYesterday, subMonths, subWeeks } from "date-fns";
+import type { InferSelectModel } from "drizzle-orm";
 import { motion } from "framer-motion";
 import { usePathname, useRouter } from "next/navigation";
 import type { User } from "next-auth";
@@ -24,8 +25,11 @@ import {
   SidebarMenu,
   useSidebar,
 } from "@/components/ui/sidebar";
-import type { Chat } from "@/lib/db/schema";
+import type { thread as threadSchema } from "@/lib/db/schema";
 import { fetcher } from "@/lib/utils";
+
+type Chat = InferSelectModel<typeof threadSchema>;
+
 import { LoaderIcon } from "./icons";
 import { ChatItem } from "./sidebar-history-item";
 
