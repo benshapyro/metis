@@ -2,17 +2,9 @@
 
 import { generateText, type UIMessage } from "ai";
 import { cookies } from "next/headers";
-import { auth } from "@/app/(auth)/auth";
-import type { VisibilityType } from "@/components/chat/visibility-selector";
 import { titleModel } from "@/lib/ai/models";
 import { titlePrompt } from "@/lib/ai/prompts";
 import { getTitleModel } from "@/lib/ai/providers";
-import {
-  deleteMessagesByChatIdAfterTimestamp,
-  getChatById,
-  getMessageById,
-  updateChatVisibilityById,
-} from "@/lib/db/queries";
 import { getTextFromMessage } from "@/lib/utils";
 
 export async function saveChatModelAsCookie(model: string) {
@@ -39,44 +31,20 @@ export async function generateTitleFromUserMessage({
     .trim();
 }
 
-export async function deleteTrailingMessages({ id }: { id: string }) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    throw new Error("Unauthorized");
-  }
-
-  const [message] = await getMessageById({ id });
-  if (!message) {
-    throw new Error("Message not found");
-  }
-
-  const chat = await getChatById({ id: message.chatId });
-  if (!chat || chat.userId !== session.user.id) {
-    throw new Error("Unauthorized");
-  }
-
-  await deleteMessagesByChatIdAfterTimestamp({
-    chatId: message.chatId,
-    timestamp: message.createdAt,
-  });
+// Stub kept for message-editor.tsx (Phase 7 will wire to thread/message tables).
+// For now this is a no-op so the UI doesn't break during Phase 6.
+export async function deleteTrailingMessages({ id: _id }: { id: string }) {
+  // Phase 7: look up message by id, verify ownership, delete messages after it.
 }
 
+// Stub kept for use-chat-visibility.ts (Phase 7 concern — threads don't have
+// a visibility field in v1, so this becomes a no-op until the UI is updated).
 export async function updateChatVisibility({
-  chatId,
-  visibility,
+  chatId: _chatId,
+  visibility: _visibility,
 }: {
   chatId: string;
-  visibility: VisibilityType;
+  visibility: "public" | "private";
 }) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    throw new Error("Unauthorized");
-  }
-
-  const chat = await getChatById({ id: chatId });
-  if (!chat || chat.userId !== session.user.id) {
-    throw new Error("Unauthorized");
-  }
-
-  await updateChatVisibilityById({ chatId, visibility });
+  // Phase 7: threads do not have visibility in v1. No-op.
 }

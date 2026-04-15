@@ -1,8 +1,11 @@
 import { createAgentUIStreamResponse } from "ai";
+import { and, eq } from "drizzle-orm";
 import { auth } from "@/app/(auth)/auth";
-import { deleteChatById, getChatById } from "@/lib/db/queries";
+import { db } from "@/lib/db";
+import { thread } from "@/lib/db/schema";
 import { ChatbotError } from "@/lib/errors";
 import { type MetisAgent, makeMetisAgent } from "@/lib/metis/agent";
+import { persistAssistantTurn } from "@/lib/persistence/turn";
 import {
   enforceRateLimit,
   type RateLimitDenied,
@@ -68,6 +71,7 @@ export async function POST(request: Request) {
   }
 
   let messages: unknown[];
+  let threadId: string | null;
   try {
     const body = await request.json();
     if (!Array.isArray(body?.messages)) {
@@ -77,6 +81,7 @@ export async function POST(request: Request) {
       ).toResponse();
     }
     messages = body.messages;
+    threadId = typeof body?.threadId === "string" ? body.threadId : null;
   } catch (err) {
     console.error("[chat.POST] failed to parse request body:", err);
     return new ChatbotError("bad_request:api", String(err)).toResponse();
@@ -90,11 +95,42 @@ export async function POST(request: Request) {
     return new ChatbotError("offline:chat", String(err)).toResponse();
   }
 
+  // Accumulate usage across steps so onFinish can record accurate cost.
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+  let totalCachedInputTokens = 0;
+
   try {
-    // TODO(phase-6): wire onFinish to call recordSpend(estimateCostUSD(usage)).
-    // Until then, the spend cap is decorative — counter is never incremented.
-    // DO NOT promote to production before Phase 6 lands.
-    return createAgentUIStreamResponse({ agent, uiMessages: messages });
+    return createAgentUIStreamResponse({
+      agent,
+      uiMessages: messages,
+      onStepFinish: (step) => {
+        totalInputTokens += step.usage.inputTokens ?? 0;
+        totalOutputTokens += step.usage.outputTokens ?? 0;
+        totalCachedInputTokens +=
+          step.usage.inputTokenDetails?.cacheReadTokens ?? 0;
+      },
+      onFinish: async ({ messages: finalMessages }) => {
+        if (!threadId) {
+          console.warn("[chat.onFinish] no threadId in body; skipping persist");
+          return;
+        }
+        try {
+          await persistAssistantTurn({
+            threadId,
+            sessionId,
+            uiMessages: finalMessages,
+            usage: {
+              inputTokens: totalInputTokens,
+              outputTokens: totalOutputTokens,
+              cachedInputTokens: totalCachedInputTokens,
+            },
+          });
+        } catch (err) {
+          console.error("[chat.onFinish] persistAssistantTurn failed:", err);
+        }
+      },
+    });
   } catch (err) {
     console.error("[chat.POST] createAgentUIStreamResponse failed:", err);
     return new ChatbotError("offline:chat", String(err)).toResponse();
@@ -110,18 +146,19 @@ export async function DELETE(request: Request) {
   }
 
   const session = await auth();
-
   if (!session?.user) {
     return new ChatbotError("unauthorized:chat").toResponse();
   }
 
-  const chat = await getChatById({ id });
+  // Delete thread only if it belongs to this session.
+  const [deleted] = await db
+    .delete(thread)
+    .where(and(eq(thread.id, id), eq(thread.sessionId, session.user.id)))
+    .returning();
 
-  if (chat?.userId !== session.user.id) {
-    return new ChatbotError("forbidden:chat").toResponse();
+  if (!deleted) {
+    return new ChatbotError("not_found:chat").toResponse();
   }
 
-  const deletedChat = await deleteChatById({ id });
-
-  return Response.json(deletedChat, { status: 200 });
+  return Response.json(deleted, { status: 200 });
 }
