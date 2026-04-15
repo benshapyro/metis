@@ -18,3 +18,6 @@ export type { ReadFrontmatterData } from './read-frontmatter';
 export { listPagesTool, listPages } from './list-pages';
 
 export { getBacklinksTool, getBacklinks } from './get-backlinks';
+
+export { searchPagesTool, searchPages } from './search-pages';
+export type { SearchHit } from './search-pages';
