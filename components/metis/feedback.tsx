@@ -7,18 +7,32 @@ export function Feedback({ messageId }: { messageId: string }) {
   const [rating, setRating] = useState<-1 | 0 | 1>(0);
   const [note, setNote] = useState("");
   const [noteOpen, setNoteOpen] = useState(false);
+  const [pending, setPending] = useState(false);
 
   const submit = async (newRating: -1 | 0 | 1, newNote?: string) => {
-    setRating(newRating);
-    await fetch("/api/feedback", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        messageId,
-        rating: newRating,
-        note: newNote ?? null,
-      }),
-    });
+    const previous = rating;
+    setRating(newRating); // optimistic
+    setPending(true);
+    try {
+      const res = await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          messageId,
+          rating: newRating,
+          note: newNote ?? null,
+        }),
+      });
+      if (!res.ok) {
+        setRating(previous); // revert on server error
+        console.error("[feedback] server rejected rating:", res.status);
+      }
+    } catch (err) {
+      setRating(previous); // revert on network error
+      console.error("[feedback] network error:", err);
+    } finally {
+      setPending(false);
+    }
   };
 
   return (
@@ -26,6 +40,7 @@ export function Feedback({ messageId }: { messageId: string }) {
       <button
         aria-label="Rate helpful"
         className={cn("hover:text-green-600", rating === 1 && "text-green-600")}
+        disabled={pending}
         onClick={() => submit(rating === 1 ? 0 : 1)}
         type="button"
       >
@@ -34,6 +49,7 @@ export function Feedback({ messageId }: { messageId: string }) {
       <button
         aria-label="Rate unhelpful"
         className={cn("hover:text-red-500", rating === -1 && "text-red-500")}
+        disabled={pending}
         onClick={() => submit(rating === -1 ? 0 : -1)}
         type="button"
       >

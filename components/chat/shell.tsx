@@ -14,8 +14,12 @@ export function ChatShell() {
   const { messages, sendMessage, status } = useActiveChat();
   const [openSource, setOpenSource] = useState<string | null>(null);
 
+  // Guard submission during both "submitted" (request sent, no chunks yet) and
+  // "streaming" phases to prevent duplicate user turns from rapid double-clicks.
+  const busy = status === "submitted" || status === "streaming";
+
   const submit = (text: string) => {
-    if (!text.trim() || status === "streaming") {
+    if (!text.trim() || busy) {
       return;
     }
     sendMessage({ role: "user" as const, parts: [{ type: "text", text }] });
@@ -58,7 +62,7 @@ export function ChatShell() {
                   </div>
                 );
               })}
-              {status === "streaming" && (
+              {busy && (
                 <div className="text-xs text-muted-foreground">
                   Metis is thinking…
                 </div>
@@ -66,7 +70,7 @@ export function ChatShell() {
             </div>
           )}
         </main>
-        <Composer disabled={status === "streaming"} onSubmit={submit} />
+        <Composer disabled={busy} onSubmit={submit} />
       </div>
 
       <SourcePanel onClose={() => setOpenSource(null)} openSlug={openSource} />
