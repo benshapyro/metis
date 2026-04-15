@@ -11,3 +11,6 @@ export type ToolResult<T> =
 
 export { readPageTool, readPage } from './read-page';
 export type { ReadPageData } from './read-page';
+
+export { readFrontmatterTool, readFrontmatter } from './read-frontmatter';
+export type { ReadFrontmatterData } from './read-frontmatter';
