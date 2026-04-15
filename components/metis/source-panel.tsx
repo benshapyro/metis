@@ -1,13 +1,13 @@
-'use client';
+"use client";
+import { useEffect, useState } from "react";
+import { Streamdown } from "streamdown";
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
-  SheetDescription,
-} from '@/components/ui/sheet';
-import { Streamdown } from 'streamdown';
-import { useEffect, useState } from 'react';
+} from "@/components/ui/sheet";
 
 interface Props {
   openSlug: string | null;
@@ -35,34 +35,44 @@ export function SourcePanel({ openSlug, onClose }: Props) {
     setLoading(true);
     setError(null);
     fetch(`/api/pages/${encodeURIComponent(openSlug)}`)
-      .then(async (r) => {
+      .then((r) => {
         if (r.status === 404) {
-          setError('This page no longer exists in the wiki.');
+          setError("This page no longer exists in the wiki.");
           return null;
         }
         if (!r.ok) {
-          setError('Failed to load source.');
+          setError("Failed to load source.");
           return null;
         }
         return r.json() as Promise<PageData>;
       })
       .then((p) => {
-        if (p) setPage(p);
+        if (p) {
+          setPage(p);
+        }
       })
       .finally(() => setLoading(false));
   }, [openSlug]);
 
   return (
-    <Sheet open={!!openSlug} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <SheetContent side="right" className="w-full sm:max-w-xl overflow-y-auto">
+    <Sheet
+      onOpenChange={(o) => {
+        if (!o) {
+          onClose();
+        }
+      }}
+      open={!!openSlug}
+    >
+      <SheetContent className="w-full sm:max-w-xl overflow-y-auto" side="right">
         <SheetHeader>
-          <SheetTitle>{page?.title ?? openSlug ?? ''}</SheetTitle>
+          <SheetTitle>{page?.title ?? openSlug ?? ""}</SheetTitle>
           {page?.frontmatter && (
             <SheetDescription>
-              {String(page.frontmatter.type ?? '')} · {String(page.frontmatter.domain ?? '')}
+              {String(page.frontmatter.type ?? "")} ·{" "}
+              {String(page.frontmatter.domain ?? "")}
               {page.frontmatter.last_updated
                 ? ` · Updated ${String(page.frontmatter.last_updated)}`
-                : ''}
+                : ""}
             </SheetDescription>
           )}
         </SheetHeader>

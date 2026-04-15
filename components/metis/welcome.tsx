@@ -1,9 +1,9 @@
-'use client';
-import { Button } from '@/components/ui/button';
+"use client";
+import { Button } from "@/components/ui/button";
 
 const STARTER_QUERIES = [
   "What's the current state of our HHMI engagement?",
-  'Walk me through ROPE. What is it and when do we use it?',
+  "Walk me through ROPE. What is it and when do we use it?",
   "What's our POV on context engineering?",
   "Based on our HHMI engagement and research on enterprise AI adoption, what should we expect from a similar institution?",
 ];
@@ -18,10 +18,10 @@ export function Welcome({ onStart }: { onStart: (q: string) => void }) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
         {STARTER_QUERIES.map((q) => (
           <Button
-            key={q}
-            variant="outline"
             className="justify-start text-left h-auto py-3 whitespace-normal"
+            key={q}
             onClick={() => onStart(q)}
+            variant="outline"
           >
             {q}
           </Button>
