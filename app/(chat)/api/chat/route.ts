@@ -3,6 +3,8 @@ import { auth } from "@/app/(auth)/auth";
 import { deleteChatById, getChatById } from "@/lib/db/queries";
 import { ChatbotError } from "@/lib/errors";
 import { type MetisAgent, makeMetisAgent } from "@/lib/metis/agent";
+import { enforceRateLimit } from "@/lib/safety/ratelimit";
+import { enforceSpendCap } from "@/lib/safety/spend-cap";
 
 // Node runtime required: tools spawn pure-JS file walks via fs.readFile.
 // maxDuration tied to stopWhen: stepCountIs(12) in agent.ts — keep them aligned;
@@ -14,6 +16,23 @@ export async function POST(request: Request) {
   const session = await auth();
   if (!session) {
     return new ChatbotError("unauthorized:chat").toResponse();
+  }
+
+  const sessionId = (session.user as { id: string }).id;
+  const xff = request.headers.get("x-forwarded-for") ?? "";
+  const ip = xff.split(",")[0]?.trim() || "unknown";
+
+  const rl = await enforceRateLimit({ sessionId, ip });
+  if (!rl.ok) {
+    return new Response(rl.message, {
+      status: 429,
+      headers: { "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) },
+    });
+  }
+
+  const spend = await enforceSpendCap();
+  if (!spend.ok) {
+    return new Response(spend.message, { status: 429 });
   }
 
   let messages: unknown[];
@@ -40,6 +59,7 @@ export async function POST(request: Request) {
   }
 
   try {
+    // TODO(phase-6): hook onFinish to call recordSpend(estimateCostUSD(usage)) once persistAssistantTurn lands
     return createAgentUIStreamResponse({ agent, uiMessages: messages });
   } catch (err) {
     console.error("[chat.POST] createAgentUIStreamResponse failed:", err);
