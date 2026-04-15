@@ -15,7 +15,10 @@
     "db:pull": "drizzle-kit pull",
     "db:check": "drizzle-kit check",
     "db:up": "drizzle-kit up",
-    "test": "export PLAYWRIGHT=True && pnpm exec playwright test"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "export PLAYWRIGHT=True && pnpm exec playwright test"
   },
   "dependencies": {
     "@ai-sdk/provider": "^3.0.3",
