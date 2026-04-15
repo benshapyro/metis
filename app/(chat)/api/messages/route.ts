@@ -1,43 +1,49 @@
+// /api/messages — fetch messages for a thread.
+// Replaces the old chat-based messages endpoint.
+import { and, asc, eq } from "drizzle-orm";
 import { auth } from "@/app/(auth)/auth";
-import { getChatById, getMessagesByChatId } from "@/lib/db/queries";
+import { db } from "@/lib/db";
+import { message, thread } from "@/lib/db/schema";
 import { convertToUIMessages } from "@/lib/utils";
+
+export const runtime = "nodejs";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const chatId = searchParams.get("chatId");
+  // Support both chatId (legacy) and threadId (new) param names.
+  const threadId = searchParams.get("threadId") ?? searchParams.get("chatId");
 
-  if (!chatId) {
-    return Response.json({ error: "chatId required" }, { status: 400 });
+  if (!threadId) {
+    return Response.json({ error: "threadId required" }, { status: 400 });
   }
 
-  const [session, chat, messages] = await Promise.all([
-    auth(),
-    getChatById({ id: chatId }),
-    getMessagesByChatId({ id: chatId }),
-  ]);
+  const session = await auth();
+  if (!session?.user) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+  const sessionId = session.user.id;
 
-  if (!chat) {
-    return Response.json({
-      messages: [],
-      visibility: "private",
-      userId: null,
-      isReadonly: false,
-    });
+  // Verify the thread exists and belongs to the caller.
+  const [t] = await db
+    .select()
+    .from(thread)
+    .where(and(eq(thread.id, threadId), eq(thread.sessionId, sessionId)))
+    .limit(1);
+
+  if (!t) {
+    return new Response("Not found", { status: 404 });
   }
 
-  if (
-    chat.visibility === "private" &&
-    (!session?.user || session.user.id !== chat.userId)
-  ) {
-    return Response.json({ error: "forbidden" }, { status: 403 });
-  }
-
-  const isReadonly = !session?.user || session.user.id !== chat.userId;
+  const messages = await db
+    .select()
+    .from(message)
+    .where(eq(message.threadId, threadId))
+    .orderBy(asc(message.createdAt));
 
   return Response.json({
     messages: convertToUIMessages(messages),
-    visibility: chat.visibility,
-    userId: chat.userId,
-    isReadonly,
+    visibility: "private",
+    userId: t.sessionId,
+    isReadonly: false,
   });
 }

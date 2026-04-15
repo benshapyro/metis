@@ -1,136 +1,129 @@
-import type { InferSelectModel } from "drizzle-orm";
+// lib/db/schema.ts — Metis v1 schema (replaces template chat schema)
+import { sql } from "drizzle-orm";
 import {
   boolean,
-  foreignKey,
-  json,
+  check,
+  index,
+  integer,
+  jsonb,
+  pgEnum,
   pgTable,
-  primaryKey,
+  smallint,
   text,
   timestamp,
   uuid,
-  varchar,
 } from "drizzle-orm/pg-core";
 
-export const user = pgTable("User", {
-  id: uuid("id").primaryKey().notNull().defaultRandom(),
-  email: varchar("email", { length: 64 }).notNull(),
-  password: varchar("password", { length: 64 }),
+export const messageRole = pgEnum("message_role", [
+  "user",
+  "assistant",
+  "system",
+]);
+
+// Auth.js adapter scaffolding — minimal. We use JWT strategy so DB sessions
+// are not required, but this table may be referenced by downstream queries.
+export const user = pgTable("user", {
+  id: text("id").primaryKey(),
   name: text("name"),
-  emailVerified: boolean("emailVerified").notNull().default(false),
-  image: text("image"),
-  isAnonymous: boolean("isAnonymous").notNull().default(false),
-  createdAt: timestamp("createdAt").notNull().defaultNow(),
-  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+  email: text("email"),
 });
 
-export type User = InferSelectModel<typeof user>;
-
-export const chat = pgTable("Chat", {
-  id: uuid("id").primaryKey().notNull().defaultRandom(),
-  createdAt: timestamp("createdAt").notNull(),
-  title: text("title").notNull(),
-  userId: uuid("userId")
-    .notNull()
-    .references(() => user.id),
-  visibility: varchar("visibility", { enum: ["public", "private"] })
-    .notNull()
-    .default("private"),
-});
-
-export type Chat = InferSelectModel<typeof chat>;
-
-export const message = pgTable("Message_v2", {
-  id: uuid("id").primaryKey().notNull().defaultRandom(),
-  chatId: uuid("chatId")
-    .notNull()
-    .references(() => chat.id),
-  role: varchar("role").notNull(),
-  parts: json("parts").notNull(),
-  attachments: json("attachments").notNull(),
-  createdAt: timestamp("createdAt").notNull(),
-});
-
-export type DBMessage = InferSelectModel<typeof message>;
-
-export const vote = pgTable(
-  "Vote_v2",
+export const thread = pgTable(
+  "thread",
   {
-    chatId: uuid("chatId")
-      .notNull()
-      .references(() => chat.id),
-    messageId: uuid("messageId")
-      .notNull()
-      .references(() => message.id),
-    isUpvoted: boolean("isUpvoted").notNull(),
+    id: uuid("id").defaultRandom().primaryKey(),
+    sessionId: text("session_id").notNull(),
+    title: text("title"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => ({
-    pk: primaryKey({ columns: [table.chatId, table.messageId] }),
+  (t) => ({
+    sessionIdx: index("thread_session_idx").on(t.sessionId, t.updatedAt),
   })
 );
 
-export type Vote = InferSelectModel<typeof vote>;
-
-export const document = pgTable(
-  "Document",
+export const message = pgTable(
+  "message",
   {
-    id: uuid("id").notNull().defaultRandom(),
-    createdAt: timestamp("createdAt").notNull(),
-    title: text("title").notNull(),
-    content: text("content"),
-    kind: varchar("text", { enum: ["text", "code", "image", "sheet"] })
+    id: uuid("id").defaultRandom().primaryKey(),
+    threadId: uuid("thread_id")
       .notNull()
-      .default("text"),
-    userId: uuid("userId")
-      .notNull()
-      .references(() => user.id),
+      .references(() => thread.id, { onDelete: "cascade" }),
+    // Denormalized for fast session-scoped queries without joining thread.
+    sessionId: text("session_id").notNull(),
+    role: messageRole("role").notNull(),
+    parts: jsonb("parts").notNull(), // UIMessage[] parts
+    modelId: text("model_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => ({
-    pk: primaryKey({ columns: [table.id, table.createdAt] }),
+  (t) => ({
+    threadIdx: index("message_thread_idx").on(t.threadId, t.createdAt),
+    sessionIdx: index("message_session_idx").on(t.sessionId, t.createdAt),
   })
 );
 
-export type Document = InferSelectModel<typeof document>;
-
-export const suggestion = pgTable(
-  "Suggestion",
+export const feedback = pgTable(
+  "feedback",
   {
-    id: uuid("id").notNull().defaultRandom(),
-    documentId: uuid("documentId").notNull(),
-    documentCreatedAt: timestamp("documentCreatedAt").notNull(),
-    originalText: text("originalText").notNull(),
-    suggestedText: text("suggestedText").notNull(),
-    description: text("description"),
-    isResolved: boolean("isResolved").notNull().default(false),
-    userId: uuid("userId")
+    id: uuid("id").defaultRandom().primaryKey(),
+    messageId: uuid("message_id")
       .notNull()
-      .references(() => user.id),
-    createdAt: timestamp("createdAt").notNull(),
+      .references(() => message.id, { onDelete: "cascade" })
+      .unique(),
+    sessionId: text("session_id").notNull(),
+    rating: smallint("rating").notNull(),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => ({
-    pk: primaryKey({ columns: [table.id] }),
-    documentRef: foreignKey({
-      columns: [table.documentId, table.documentCreatedAt],
-      foreignColumns: [document.id, document.createdAt],
-    }),
+  (t) => ({
+    ratingCheck: check("feedback_rating_range", sql`rating in (-1, 0, 1)`),
+    sessionIdx: index("feedback_session_idx").on(t.sessionId, t.createdAt),
   })
 );
 
-export type Suggestion = InferSelectModel<typeof suggestion>;
-
-export const stream = pgTable(
-  "Stream",
+export const retrievalTrace = pgTable(
+  "retrieval_trace",
   {
-    id: uuid("id").notNull().defaultRandom(),
-    chatId: uuid("chatId").notNull(),
-    createdAt: timestamp("createdAt").notNull(),
+    id: uuid("id").defaultRandom().primaryKey(),
+    messageId: uuid("message_id")
+      .notNull()
+      .references(() => message.id, { onDelete: "cascade" })
+      .unique(),
+    sessionId: text("session_id").notNull(),
+    // [{name, args, ok, reason?}]
+    toolsCalled: jsonb("tools_called").notNull(),
+    pagesRead: text("pages_read")
+      .array()
+      .notNull()
+      .default(sql`ARRAY[]::text[]`),
+    citedPages: text("cited_pages")
+      .array()
+      .notNull()
+      .default(sql`ARRAY[]::text[]`),
+    hallucinatedCitations: text("hallucinated_citations")
+      .array()
+      .notNull()
+      .default(sql`ARRAY[]::text[]`),
+    durationMs: integer("duration_ms"),
+    tokenCountIn: integer("token_count_in"),
+    tokenCountOut: integer("token_count_out"),
+    // [{model, in, out, latency}]
+    modelCalls: jsonb("model_calls"),
+    stepCount: integer("step_count"),
+    hitStepCap: boolean("hit_step_cap").default(false).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => ({
-    pk: primaryKey({ columns: [table.id] }),
-    chatRef: foreignKey({
-      columns: [table.chatId],
-      foreignColumns: [chat.id],
-    }),
+  (t) => ({
+    sessionIdx: index("trace_session_idx").on(t.sessionId, t.createdAt),
   })
 );
-
-export type Stream = InferSelectModel<typeof stream>;

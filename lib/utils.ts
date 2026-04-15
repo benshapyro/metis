@@ -5,7 +5,6 @@ import type {
 import { type ClassValue, clsx } from 'clsx';
 import { formatISO } from 'date-fns';
 import { twMerge } from 'tailwind-merge';
-import type { DBMessage, Document } from '@/lib/db/schema';
 import { ChatbotError, type ErrorCode } from './errors';
 import type { ChatMessage, ChatTools, CustomUIDataTypes } from './types';
 
@@ -54,27 +53,21 @@ export function generateUUID(): string {
   });
 }
 
-export function getDocumentTimestampByIndex(
-  documents: Document[],
-  index: number,
-) {
-  if (!documents) { return new Date(); }
-  if (index > documents.length) { return new Date(); }
-
-  return documents[index].createdAt;
-}
-
 export function sanitizeText(text: string) {
   return text.replace('<has_function_call>', '');
 }
 
-export function convertToUIMessages(messages: DBMessage[]): ChatMessage[] {
+export function convertToUIMessages(
+  messages: Array<{ id: string; role: string; parts: unknown; createdAt: Date | string }>,
+): ChatMessage[] {
   return messages.map((message) => ({
     id: message.id,
     role: message.role as 'user' | 'assistant' | 'system',
     parts: message.parts as UIMessagePart<CustomUIDataTypes, ChatTools>[],
     metadata: {
-      createdAt: formatISO(message.createdAt),
+      createdAt: formatISO(
+        message.createdAt instanceof Date ? message.createdAt : new Date(message.createdAt),
+      ),
     },
   }));
 }

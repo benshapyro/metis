@@ -1,6 +1,9 @@
 "use client";
 import type { UseChatHelpers } from "@ai-sdk/react";
-import type { Vote } from "@/lib/db/schema";
+
+// Vote type replaced by Feedback in Metis v1.
+type Vote = { messageId: string; isUpvoted: boolean } | undefined;
+
 import type { ChatMessage } from "@/lib/types";
 import { cn, sanitizeText } from "@/lib/utils";
 import { MessageContent, MessageResponse } from "../ai-elements/message";

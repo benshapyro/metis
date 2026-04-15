@@ -1,8 +1,12 @@
 import { createAgentUIStreamResponse } from "ai";
+import { and, eq } from "drizzle-orm";
+import { after } from "next/server";
 import { auth } from "@/app/(auth)/auth";
-import { deleteChatById, getChatById } from "@/lib/db/queries";
+import { db } from "@/lib/db";
+import { message, thread } from "@/lib/db/schema";
 import { ChatbotError } from "@/lib/errors";
 import { type MetisAgent, makeMetisAgent } from "@/lib/metis/agent";
+import { persistAssistantTurn } from "@/lib/persistence/turn";
 import {
   enforceRateLimit,
   type RateLimitDenied,
@@ -68,6 +72,7 @@ export async function POST(request: Request) {
   }
 
   let messages: unknown[];
+  let threadId: string | null;
   try {
     const body = await request.json();
     if (!Array.isArray(body?.messages)) {
@@ -77,6 +82,7 @@ export async function POST(request: Request) {
       ).toResponse();
     }
     messages = body.messages;
+    threadId = typeof body?.threadId === "string" ? body.threadId : null;
   } catch (err) {
     console.error("[chat.POST] failed to parse request body:", err);
     return new ChatbotError("bad_request:api", String(err)).toResponse();
@@ -90,11 +96,83 @@ export async function POST(request: Request) {
     return new ChatbotError("offline:chat", String(err)).toResponse();
   }
 
+  // Persist the incoming user message before starting the agent.
+  if (threadId && messages.length > 0) {
+    const lastUserIdx = [...messages]
+      .reverse()
+      .findIndex((m: any) => m.role === "user");
+    const lastUserMsg =
+      lastUserIdx >= 0 ? messages.at(-(lastUserIdx + 1)) : null;
+    if (lastUserMsg) {
+      try {
+        await db.insert(message).values({
+          threadId,
+          sessionId,
+          role: "user",
+          parts: (lastUserMsg as any).parts ?? [],
+          modelId: null,
+        });
+        // Bump thread updatedAt while we're here (Fix 12).
+        await db
+          .update(thread)
+          .set({ updatedAt: new Date() })
+          .where(eq(thread.id, threadId));
+      } catch (err) {
+        console.error("[chat] failed to persist user message:", err);
+        // Continue — losing one user msg shouldn't block the agent.
+      }
+    }
+  }
+
+  // Accumulate usage across steps so onFinish can record accurate cost.
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+  let totalCachedInputTokens = 0;
+  let totalCacheCreationTokens = 0;
+  let totalSteps = 0;
+
   try {
-    // TODO(phase-6): wire onFinish to call recordSpend(estimateCostUSD(usage)).
-    // Until then, the spend cap is decorative — counter is never incremented.
-    // DO NOT promote to production before Phase 6 lands.
-    return createAgentUIStreamResponse({ agent, uiMessages: messages });
+    return createAgentUIStreamResponse({
+      agent,
+      uiMessages: messages,
+      onStepFinish: (step: any) => {
+        totalSteps++;
+        const u = step.usage;
+        if (!u) {
+          console.warn("[chat] step.usage missing; skipping accumulation");
+          return;
+        }
+        totalInputTokens += u.inputTokens ?? 0;
+        totalOutputTokens += u.outputTokens ?? 0;
+        totalCachedInputTokens += u.inputTokenDetails?.cacheReadTokens ?? 0;
+        totalCacheCreationTokens +=
+          u.inputTokenDetails?.cacheCreationTokens ?? 0;
+      },
+      onFinish: ({ messages: finalMessages }: any) => {
+        if (!threadId) {
+          console.error(
+            "[chat.onFinish] no threadId in body; skipping persist"
+          );
+          return;
+        }
+        after(
+          persistAssistantTurn({
+            threadId,
+            sessionId,
+            uiMessages: finalMessages,
+            totalSteps,
+            usage: {
+              inputTokens: totalInputTokens,
+              outputTokens: totalOutputTokens,
+              cachedInputTokens: totalCachedInputTokens,
+              cacheCreationTokens: totalCacheCreationTokens,
+            },
+          }).catch((err) => {
+            console.error("[chat.onFinish] persistAssistantTurn failed:", err);
+          })
+        );
+      },
+    });
   } catch (err) {
     console.error("[chat.POST] createAgentUIStreamResponse failed:", err);
     return new ChatbotError("offline:chat", String(err)).toResponse();
@@ -110,18 +188,19 @@ export async function DELETE(request: Request) {
   }
 
   const session = await auth();
-
   if (!session?.user) {
     return new ChatbotError("unauthorized:chat").toResponse();
   }
 
-  const chat = await getChatById({ id });
+  // Delete thread only if it belongs to this session.
+  const [deleted] = await db
+    .delete(thread)
+    .where(and(eq(thread.id, id), eq(thread.sessionId, session.user.id)))
+    .returning();
 
-  if (chat?.userId !== session.user.id) {
-    return new ChatbotError("forbidden:chat").toResponse();
+  if (!deleted) {
+    return new ChatbotError("not_found:chat").toResponse();
   }
 
-  const deletedChat = await deleteChatById({ id });
-
-  return Response.json(deletedChat, { status: 200 });
+  return Response.json(deleted, { status: 200 });
 }

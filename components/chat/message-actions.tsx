@@ -3,7 +3,11 @@ import { memo } from "react";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
 import { useCopyToClipboard } from "usehooks-ts";
-import type { Vote } from "@/lib/db/schema";
+
+// Vote type replaced by Feedback in Metis v1.
+// Keeping the Vote prop shape inline so message.tsx compiles without changes.
+type Vote = { messageId: string; isUpvoted: boolean };
+
 import type { ChatMessage } from "@/lib/types";
 import {
   MessageAction as Action,
