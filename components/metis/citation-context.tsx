@@ -1,11 +1,11 @@
-'use client';
-import { createContext, useContext, useMemo, type ReactNode } from 'react';
+"use client";
+import { createContext, type ReactNode, useContext, useMemo } from "react";
 
 export interface CitationSource {
   slug: string;
   title?: string;
   confidence?: string;
-  coverage?: 'low' | 'medium' | 'high';
+  coverage?: "low" | "medium" | "high";
 }
 
 interface CitationContextValue {
@@ -27,13 +27,17 @@ export function CitationProvider({
 }: CitationContextValue & { children: ReactNode }) {
   const value = useMemo(
     () => ({ allowlist, sourcesBySlug, onOpenSource }),
-    [allowlist, sourcesBySlug, onOpenSource],
+    [allowlist, sourcesBySlug, onOpenSource]
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
 export function useCitationContext(): CitationContextValue {
   const v = useContext(Ctx);
-  if (!v) throw new Error('useCitationContext must be used within a CitationProvider');
+  if (!v) {
+    throw new Error(
+      "useCitationContext must be used within a CitationProvider"
+    );
+  }
   return v;
 }
