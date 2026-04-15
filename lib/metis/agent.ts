@@ -1,14 +1,14 @@
-import { ToolLoopAgent, stepCountIs, type InferAgentUIMessage } from 'ai';
-import { systemPromptString } from './prompt';
-import { METIS_MODELS } from '@/lib/ai/models';
-import { getLanguageModel } from '@/lib/ai/providers';
+import { type InferAgentUIMessage, stepCountIs, ToolLoopAgent } from "ai";
+import { METIS_MODELS } from "@/lib/ai/models";
+import { getLanguageModel } from "@/lib/ai/providers";
 import {
-  searchPagesTool,
-  readPageTool,
-  readFrontmatterTool,
-  listPagesTool,
   getBacklinksTool,
-} from '@/lib/metis/tools';
+  listPagesTool,
+  readFrontmatterTool,
+  readPageTool,
+  searchPagesTool,
+} from "@/lib/metis/tools";
+import { systemPromptString } from "./prompt";
 
 export async function makeMetisAgent() {
   return new ToolLoopAgent({
@@ -24,7 +24,7 @@ export async function makeMetisAgent() {
     stopWhen: stepCountIs(12),
     providerOptions: {
       anthropic: {
-        cacheControl: { type: 'ephemeral', ttl: '1h' },
+        cacheControl: { type: "ephemeral", ttl: "1h" },
       },
     },
   });

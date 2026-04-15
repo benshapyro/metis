@@ -1,4 +1,4 @@
-import { loadHotCaches } from './hot-caches';
+import { loadHotCaches } from "./hot-caches";
 
 const STATIC_PROMPT = `# Identity
 
@@ -134,15 +134,15 @@ export async function systemPromptString(): Promise<string> {
   const hot = await loadHotCaches();
   return [
     STATIC_PROMPT,
-    '\n\n---\n\n# Wiki Index\n\n',
+    "\n\n---\n\n# Wiki Index\n\n",
     hot.index,
-    '\n\n---\n\n# Hot Caches\n\n## Practice\n\n',
+    "\n\n---\n\n# Hot Caches\n\n## Practice\n\n",
     hot.practice,
-    '\n\n## Research\n\n',
+    "\n\n## Research\n\n",
     hot.research,
-    '\n\n## Clients\n\n',
+    "\n\n## Clients\n\n",
     hot.clients,
-    '\n\n## Personal\n\n',
+    "\n\n## Personal\n\n",
     hot.personal,
-  ].join('');
+  ].join("");
 }
