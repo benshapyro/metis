@@ -18,42 +18,32 @@ export async function GET(request: Request) {
   }
 
   const session = await auth();
+  if (!session?.user) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+  const sessionId = session.user.id;
 
+  // Verify the thread exists and belongs to the caller.
   const [t] = await db
     .select()
     .from(thread)
-    .where(eq(thread.id, threadId))
+    .where(and(eq(thread.id, threadId), eq(thread.sessionId, sessionId)))
     .limit(1);
 
   if (!t) {
-    return Response.json({
-      messages: [],
-      visibility: "private",
-      userId: null,
-      isReadonly: false,
-    });
+    return new Response("Not found", { status: 404 });
   }
-
-  // All threads are session-scoped (no public/private yet in v1).
-  const isReadonly = !session?.user || session.user.id !== t.sessionId;
 
   const messages = await db
     .select()
     .from(message)
-    .where(
-      and(
-        eq(message.threadId, threadId),
-        // Only return messages if the caller owns the thread or it is their session.
-        // For isReadonly callers we still return messages (read access).
-        eq(message.threadId, threadId)
-      )
-    )
+    .where(eq(message.threadId, threadId))
     .orderBy(asc(message.createdAt));
 
   return Response.json({
     messages: convertToUIMessages(messages),
     visibility: "private",
     userId: t.sessionId,
-    isReadonly,
+    isReadonly: false,
   });
 }

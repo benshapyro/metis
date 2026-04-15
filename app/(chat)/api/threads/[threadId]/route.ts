@@ -48,9 +48,13 @@ export async function DELETE(
   const sessionId = session.user.id;
   const { threadId } = await params;
 
-  await db
+  const [deleted] = await db
     .delete(thread)
-    .where(and(eq(thread.id, threadId), eq(thread.sessionId, sessionId)));
+    .where(and(eq(thread.id, threadId), eq(thread.sessionId, sessionId)))
+    .returning({ id: thread.id });
 
-  return NextResponse.json({ ok: true });
+  if (!deleted) {
+    return new Response("Not found", { status: 404 });
+  }
+  return NextResponse.json({ ok: true, id: deleted.id });
 }

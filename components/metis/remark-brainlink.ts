@@ -3,12 +3,11 @@
 import type { PhrasingContent, Root, Text } from "mdast";
 import type { Plugin } from "unified";
 import { visit } from "unist-util-visit";
+import { BRAINLINK_RE } from "@/lib/metis/brainlink-syntax";
 
 export interface RemarkBrainlinkOptions {
   allowlist: Set<string>;
 }
-
-const BRAINLINK_RE = /\[\[([^\]\n|]+?)(?:\|([^\]\n]*))?\]\]/g;
 
 export const remarkBrainlink: Plugin<[RemarkBrainlinkOptions], Root> = ({
   allowlist,

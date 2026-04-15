@@ -8,11 +8,14 @@ export const runtime = "nodejs";
 export async function GET() {
   try {
     const cache = await forceReloadHotCaches();
+    console.log(`[warm] reloaded hot caches: ${cache.totalChars} chars`);
     return NextResponse.json({ ok: true, hotCachesChars: cache.totalChars });
   } catch (err) {
-    console.error("[warm] forceReloadHotCaches failed:", err);
+    // High-severity: sustained warm failures mean cold caches forever; check
+    // wiki submodule deployment + Upstash availability.
+    console.error("[warm] forceReloadHotCaches failed (severity: high):", err);
     return NextResponse.json(
-      { ok: false, error: String(err) },
+      { ok: false, error: String(err), severity: "high" },
       { status: 500 }
     );
   }

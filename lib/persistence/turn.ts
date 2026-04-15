@@ -1,9 +1,11 @@
 // lib/persistence/turn.ts — persist one assistant turn + retrieval trace.
 // Called from the /api/chat onFinish handler after each streaming response.
 
+import { eq } from "drizzle-orm";
 import { METIS_MODELS } from "@/lib/ai/models";
 import { db } from "@/lib/db";
-import { message, retrievalTrace } from "@/lib/db/schema";
+import { message, retrievalTrace, thread } from "@/lib/db/schema";
+import { parseBrainlinks } from "@/lib/metis/brainlink-syntax";
 import { estimateCostUSD } from "@/lib/safety/cost";
 import { recordSpend } from "@/lib/safety/spend-cap";
 
@@ -12,6 +14,8 @@ interface PersistArgs {
   sessionId: string;
   // Full conversation returned by the SDK after streaming finishes.
   uiMessages: unknown[];
+  // Total agent steps from the onStepFinish accumulator.
+  totalSteps?: number;
   usage?: {
     inputTokens?: number;
     outputTokens?: number;
@@ -40,25 +44,12 @@ interface UiMessage {
 }
 
 export async function persistAssistantTurn(args: PersistArgs): Promise<void> {
-  const { threadId, sessionId, uiMessages, usage } = args;
+  const { threadId, sessionId, uiMessages, usage, totalSteps } = args;
 
   const last = (uiMessages as UiMessage[]).at(-1);
   if (!last || last.role !== "assistant") {
     return;
   }
-
-  const [inserted] = await db
-    .insert(message)
-    .values({
-      threadId,
-      sessionId,
-      role: "assistant",
-      parts: last.parts ?? [],
-      modelId: METIS_MODELS.synthesize,
-    })
-    .returning({ id: message.id });
-
-  const messageId = inserted.id;
 
   // Compute retrieval trace from message parts.
   const toolsCalled: Array<{
@@ -70,12 +61,9 @@ export async function persistAssistantTurn(args: PersistArgs): Promise<void> {
   const pagesRead = new Set<string>();
   const citedPages = new Set<string>();
   const hallucinated = new Set<string>();
-  let stepCount = 0;
-  let hitStepCap = false;
 
   for (const p of last.parts ?? []) {
     if (typeof p.type === "string" && p.type.startsWith("tool-")) {
-      stepCount++;
       const name = p.type.slice("tool-".length);
       const tp = p as ToolPart;
       if (tp.state === "output-available") {
@@ -98,9 +86,7 @@ export async function persistAssistantTurn(args: PersistArgs): Promise<void> {
       }
     }
     if (p.type === "text") {
-      const text = (p as TextPart).text ?? "";
-      for (const m of text.matchAll(/\[\[([^\]\n|]+?)(?:\|[^\]\n]*)?\]\]/g)) {
-        const slug = m[1].trim();
+      for (const { slug } of parseBrainlinks((p as TextPart).text ?? "")) {
         if (pagesRead.has(slug)) {
           citedPages.add(slug);
         } else {
@@ -110,25 +96,49 @@ export async function persistAssistantTurn(args: PersistArgs): Promise<void> {
     }
   }
 
+  // Use the step accumulator from the caller; fall back to tool-part count.
+  const stepCount = totalSteps ?? 0;
   // 12 matches the stepCountIs(12) cap in agent.ts.
-  if (stepCount >= 12) {
-    hitStepCap = true;
-  }
+  const hitStepCap = stepCount >= 12;
 
-  await db.insert(retrievalTrace).values({
-    messageId,
-    sessionId,
-    toolsCalled,
-    pagesRead: [...pagesRead],
-    citedPages: [...citedPages],
-    hallucinatedCitations: [...hallucinated],
-    tokenCountIn: usage?.inputTokens,
-    tokenCountOut: usage?.outputTokens,
-    modelCalls: usage ?? {},
-    stepCount,
-    hitStepCap,
+  // Wrap message + trace inserts in a single transaction so both succeed or
+  // both roll back. Bump thread.updatedAt inside the same transaction.
+  await db.transaction(async (tx) => {
+    const [m] = await tx
+      .insert(message)
+      .values({
+        threadId,
+        sessionId,
+        role: "assistant",
+        parts: last.parts ?? [],
+        modelId: METIS_MODELS.synthesize,
+      })
+      .returning({ id: message.id });
+    if (!m) {
+      throw new Error("persistAssistantTurn: message insert returned no rows");
+    }
+    await tx.insert(retrievalTrace).values({
+      messageId: m.id,
+      sessionId,
+      toolsCalled,
+      pagesRead: [...pagesRead],
+      citedPages: [...citedPages],
+      hallucinatedCitations: [...hallucinated],
+      tokenCountIn: usage?.inputTokens,
+      tokenCountOut: usage?.outputTokens,
+      modelCalls: usage ?? {},
+      stepCount,
+      hitStepCap,
+    });
+    // Bump thread.updatedAt (Fix 12).
+    await tx
+      .update(thread)
+      .set({ updatedAt: new Date() })
+      .where(eq(thread.id, threadId));
+    return m;
   });
 
+  // recordSpend is a separate concern — Redis failure shouldn't roll back DB.
   const cost = estimateCostUSD({
     model: METIS_MODELS.synthesize,
     inputTokens: usage?.inputTokens ?? 0,

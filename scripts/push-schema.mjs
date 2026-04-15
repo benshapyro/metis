@@ -7,7 +7,33 @@ import postgres from "postgres";
 
 config({ path: ".env.local" });
 
-const sql = postgres(process.env.POSTGRES_URL ?? "");
+const url = process.env.POSTGRES_URL ?? "";
+if (!url) {
+  console.error("[push-schema] POSTGRES_URL is not set. Aborting.");
+  process.exit(1);
+}
+
+const isProdLike =
+  !url.includes("localhost") &&
+  !url.includes("127.0.0.1") &&
+  !url.includes("neon.tech/dev") &&
+  process.env.NODE_ENV === "production";
+
+if (isProdLike && process.env.CONFIRM_DROP_PROD !== "yes") {
+  console.error("[push-schema] Refusing to run against production-like DB.");
+  console.error(`  POSTGRES_URL host: ${new URL(url).host}`);
+  console.error(
+    "  To override, set CONFIRM_DROP_PROD=yes (THIS DESTROYS DATA)."
+  );
+  process.exit(1);
+}
+
+console.log(`[push-schema] target DB host: ${new URL(url).host}`);
+console.log(
+  "[push-schema] this script DROPS legacy tables CASCADE — destructive."
+);
+
+const sql = postgres(url);
 
 async function main() {
   console.log("Dropping old tables...");

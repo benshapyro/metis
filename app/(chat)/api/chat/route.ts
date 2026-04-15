@@ -1,8 +1,9 @@
 import { createAgentUIStreamResponse } from "ai";
 import { and, eq } from "drizzle-orm";
+import { after } from "next/server";
 import { auth } from "@/app/(auth)/auth";
 import { db } from "@/lib/db";
-import { thread } from "@/lib/db/schema";
+import { message, thread } from "@/lib/db/schema";
 import { ChatbotError } from "@/lib/errors";
 import { type MetisAgent, makeMetisAgent } from "@/lib/metis/agent";
 import { persistAssistantTurn } from "@/lib/persistence/turn";
@@ -95,40 +96,81 @@ export async function POST(request: Request) {
     return new ChatbotError("offline:chat", String(err)).toResponse();
   }
 
+  // Persist the incoming user message before starting the agent.
+  if (threadId && messages.length > 0) {
+    const lastUserIdx = [...messages]
+      .reverse()
+      .findIndex((m: any) => m.role === "user");
+    const lastUserMsg =
+      lastUserIdx >= 0 ? messages.at(-(lastUserIdx + 1)) : null;
+    if (lastUserMsg) {
+      try {
+        await db.insert(message).values({
+          threadId,
+          sessionId,
+          role: "user",
+          parts: (lastUserMsg as any).parts ?? [],
+          modelId: null,
+        });
+        // Bump thread updatedAt while we're here (Fix 12).
+        await db
+          .update(thread)
+          .set({ updatedAt: new Date() })
+          .where(eq(thread.id, threadId));
+      } catch (err) {
+        console.error("[chat] failed to persist user message:", err);
+        // Continue — losing one user msg shouldn't block the agent.
+      }
+    }
+  }
+
   // Accumulate usage across steps so onFinish can record accurate cost.
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
   let totalCachedInputTokens = 0;
+  let totalCacheCreationTokens = 0;
+  let totalSteps = 0;
 
   try {
     return createAgentUIStreamResponse({
       agent,
       uiMessages: messages,
-      onStepFinish: (step) => {
-        totalInputTokens += step.usage.inputTokens ?? 0;
-        totalOutputTokens += step.usage.outputTokens ?? 0;
-        totalCachedInputTokens +=
-          step.usage.inputTokenDetails?.cacheReadTokens ?? 0;
-      },
-      onFinish: async ({ messages: finalMessages }) => {
-        if (!threadId) {
-          console.warn("[chat.onFinish] no threadId in body; skipping persist");
+      onStepFinish: (step: any) => {
+        totalSteps++;
+        const u = step.usage;
+        if (!u) {
+          console.warn("[chat] step.usage missing; skipping accumulation");
           return;
         }
-        try {
-          await persistAssistantTurn({
+        totalInputTokens += u.inputTokens ?? 0;
+        totalOutputTokens += u.outputTokens ?? 0;
+        totalCachedInputTokens += u.inputTokenDetails?.cacheReadTokens ?? 0;
+        totalCacheCreationTokens +=
+          u.inputTokenDetails?.cacheCreationTokens ?? 0;
+      },
+      onFinish: ({ uiMessages: finalMessages }: any) => {
+        if (!threadId) {
+          console.error(
+            "[chat.onFinish] no threadId in body; skipping persist"
+          );
+          return;
+        }
+        after(
+          persistAssistantTurn({
             threadId,
             sessionId,
             uiMessages: finalMessages,
+            totalSteps,
             usage: {
               inputTokens: totalInputTokens,
               outputTokens: totalOutputTokens,
               cachedInputTokens: totalCachedInputTokens,
+              cacheCreationTokens: totalCacheCreationTokens,
             },
-          });
-        } catch (err) {
-          console.error("[chat.onFinish] persistAssistantTurn failed:", err);
-        }
+          }).catch((err) => {
+            console.error("[chat.onFinish] persistAssistantTurn failed:", err);
+          })
+        );
       },
     });
   } catch (err) {
