@@ -14,11 +14,15 @@ export interface ReadPageData {
 export async function readPage(input: {
   slug: string;
 }): Promise<ToolResult<ReadPageData>> {
-  const raw = await safeReadMarkdown(input.slug);
-  if (raw === null) {
-    return { ok: false, reason: "not_found" };
+  const res = await safeReadMarkdown(input.slug);
+  if (!res.ok) {
+    return {
+      ok: false,
+      reason: res.reason,
+      ...(res.detail ? { detail: res.detail } : {}),
+    };
   }
-  const { frontmatter, body } = parseFrontmatter(raw);
+  const { frontmatter, body } = parseFrontmatter(res.content);
   const capped = body.length > MAX_BYTES;
   const content = capped ? body.slice(0, MAX_BYTES) : body;
   return {

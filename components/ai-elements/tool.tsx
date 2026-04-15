@@ -1,8 +1,5 @@
 "use client";
 
-import type { DynamicToolUIPart, ToolUIPart } from "ai";
-import type { ComponentProps, ReactNode } from "react";
-
 import { Badge } from "@/components/ui/badge";
 import {
   Collapsible,
@@ -10,6 +7,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
+import type { DynamicToolUIPart, ToolUIPart } from "ai";
 import {
   CheckCircleIcon,
   ChevronDownIcon,
@@ -18,6 +16,7 @@ import {
   WrenchIcon,
   XCircleIcon,
 } from "lucide-react";
+import type { ComponentProps, ReactNode } from "react";
 import { isValidElement } from "react";
 
 import { CodeBlock } from "./code-block";
@@ -161,7 +160,9 @@ export const ToolOutput = ({
       <div
         className={cn(
           "overflow-x-auto rounded-md text-xs [&_table]:w-full",
-          errorText && "bg-destructive/10 text-destructive"
+          errorText
+            ? "bg-destructive/10 text-destructive"
+            : "bg-muted/50 text-foreground"
         )}
       >
         {errorText && <div>{errorText}</div>}
