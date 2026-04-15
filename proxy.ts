@@ -3,17 +3,29 @@
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import type { Session } from "next-auth";
 import { auth } from "./app/(auth)/auth";
 
-const PUBLIC_PATHS = ["/login", "/api/auth", "/api/warm"];
+const PUBLIC_PATHS = ["/login", "/api/auth", "/api/warm"] as const;
 
 export default async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
+  const isPublic = PUBLIC_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`)
+  );
+  if (isPublic) {
     return NextResponse.next();
   }
 
-  const session = await auth();
+  let session: Session | null;
+  try {
+    session = await auth();
+  } catch (err) {
+    console.error("[proxy] auth() failed", err);
+    const url = new URL("/login", req.url);
+    url.searchParams.set("error", "session_invalid");
+    return NextResponse.redirect(url);
+  }
   if (!session) {
     const url = new URL("/login", req.url);
     url.searchParams.set("callbackUrl", pathname);

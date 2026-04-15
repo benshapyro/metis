@@ -56,6 +56,9 @@ export async function getCapabilities(): Promise<
           { next: { revalidate: 86_400 } }
         );
         if (!res.ok) {
+          console.warn(
+            `[models] capability fetch ${model.id} returned ${res.status} ${res.statusText}`
+          );
           return [model.id, { tools: false, vision: false, reasoning: false }];
         }
 
@@ -79,7 +82,8 @@ export async function getCapabilities(): Promise<
             reasoning: params.has("reasoning"),
           },
         ];
-      } catch {
+      } catch (err) {
+        console.error(`[models] capability fetch failed for ${model.id}`, err);
         return [model.id, { tools: false, vision: false, reasoning: false }];
       }
     })
@@ -126,7 +130,8 @@ export async function getAllGatewayModels(): Promise<
           reasoning: m.tags?.includes("reasoning") ?? false,
         },
       }));
-  } catch {
+  } catch (err) {
+    console.error("[models] getAllGatewayModels failed", err);
     return [];
   }
 }

@@ -12,7 +12,11 @@ export default function LoginPage() {
   const [pending, startTransition] = useTransition();
   const router = useRouter();
   const params = useSearchParams();
-  const callbackUrl = params.get("callbackUrl") ?? "/";
+  const rawCallback = params.get("callbackUrl") ?? "/";
+  const callbackUrl =
+    rawCallback.startsWith("/") && !rawCallback.startsWith("//")
+      ? rawCallback
+      : "/";
 
   return (
     <div className="min-h-dvh flex items-center justify-center p-8">
@@ -27,8 +31,19 @@ export default function LoginPage() {
             });
             if (res?.ok) {
               router.push(callbackUrl);
-            } else {
+              return;
+            }
+            if (!res) {
+              setError("Couldn't reach the server. Try again.");
+              return;
+            }
+            if (res.error === "CredentialsSignin") {
               setError("Wrong password.");
+            } else {
+              console.error("signIn failed", res);
+              setError(
+                `Sign-in failed (${res.error ?? "unknown"}). Contact an admin.`
+              );
             }
           });
         }}

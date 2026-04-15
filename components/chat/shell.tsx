@@ -12,7 +12,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useActiveChat } from "@/hooks/use-active-chat";
-import type { Attachment, ChatMessage } from "@/lib/types";
+import type { ChatMessage } from "@/lib/types";
 import { ChatHeader } from "./chat-header";
 import { DataStreamHandler } from "./data-stream-handler";
 import { submitEditedMessage } from "./message-editor";
@@ -43,7 +43,6 @@ export function ChatShell() {
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(
     null
   );
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
 
   const stopRef = useRef(stop);
   stopRef.current = stop;
@@ -54,7 +53,6 @@ export function ChatShell() {
       prevChatIdRef.current = chatId;
       stopRef.current();
       setEditingMessage(null);
-      setAttachments([]);
     }
   }, [chatId]);
 
@@ -93,7 +91,6 @@ export function ChatShell() {
             <div className="sticky bottom-0 z-1 mx-auto flex w-full max-w-4xl gap-2 border-t-0 bg-background px-2 pb-3 md:px-4 md:pb-4">
               {!isReadonly && (
                 <MultimodalInput
-                  attachments={attachments}
                   chatId={chatId}
                   editingMessage={editingMessage}
                   input={input}
@@ -120,7 +117,6 @@ export function ChatShell() {
                         }
                       : sendMessage
                   }
-                  setAttachments={setAttachments}
                   setInput={setInput}
                   setMessages={setMessages}
                   status={status}

@@ -7,9 +7,8 @@ import NextAuth, { type DefaultSession } from "next-auth";
 import type { DefaultJWT } from "next-auth/jwt";
 import Credentials from "next-auth/providers/credentials";
 
-// UserType is preserved so downstream consumers (entitlements, chat route) compile.
-// In v1 every authenticated user is "regular"; "guest" access is removed.
-export type UserType = "guest" | "regular";
+// In v1 every authenticated user is "regular"; guest access is removed.
+export type UserType = "regular";
 
 declare module "next-auth" {
   interface Session extends DefaultSession {
@@ -81,7 +80,7 @@ export const {
     jwt({ token, user }) {
       if (user) {
         token.id = user.id as string;
-        token.type = (user as { type: UserType }).type ?? "regular";
+        token.type = (user as { type: UserType }).type;
       }
       return token;
     },
