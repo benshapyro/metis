@@ -1,18 +1,28 @@
-import fs from 'node:fs/promises';
-import fsSync from 'node:fs';
-import path from 'node:path';
-import { parse as parseYaml } from 'yaml';
+import fsSync from "node:fs";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { parse as parseYaml } from "yaml";
 
 export function wikiRoot(): string {
   const root = process.env.WIKI_ROOT;
-  if (!root) throw new Error('WIKI_ROOT env var not set');
+  if (!root) {
+    throw new Error("WIKI_ROOT env var not set");
+  }
   return root;
 }
 
 const SEARCH_DIRS = [
-  'practice', 'research', 'personal',
-  'people', 'organizations', 'concepts', 'frameworks', 'tools',
-  'published', '_meta', 'clients',
+  "practice",
+  "research",
+  "personal",
+  "people",
+  "organizations",
+  "concepts",
+  "frameworks",
+  "tools",
+  "published",
+  "_meta",
+  "clients",
 ];
 
 /**
@@ -21,20 +31,24 @@ const SEARCH_DIRS = [
  */
 export function resolveSlug(slug: string): string | null {
   const root = wikiRoot();
-  const parts = slug.split('/');
+  const parts = slug.split("/");
 
   // Try direct path for nested slugs
   if (parts.length > 1) {
     const direct = path.join(root, `${slug}.md`);
-    if (fsSync.existsSync(direct)) return direct;
+    if (fsSync.existsSync(direct)) {
+      return direct;
+    }
   }
 
   // Try common directories
-  const basename = parts[parts.length - 1];
-  const maybeSubdir = parts.length > 1 ? parts.slice(0, -1).join('/') : '';
+  const basename = parts.at(-1);
+  const maybeSubdir = parts.length > 1 ? parts.slice(0, -1).join("/") : "";
   for (const dir of SEARCH_DIRS) {
     const candidate = path.join(root, dir, maybeSubdir, `${basename}.md`);
-    if (fsSync.existsSync(candidate)) return candidate;
+    if (fsSync.existsSync(candidate)) {
+      return candidate;
+    }
   }
 
   // Fall back to recursive search
@@ -45,16 +59,25 @@ function walkFor(dir: string, filename: string): string | null {
   let entries: fsSync.Dirent[];
   try {
     entries = fsSync.readdirSync(dir, { withFileTypes: true });
-  } catch {
+  } catch (err: unknown) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      return null;
+    }
+    console.error(`[wiki.walkFor] readdir failed for ${dir}:`, code ?? err);
     return null;
   }
 
   for (const e of entries) {
-    if (e.name.startsWith('.') || e.name === 'node_modules') continue;
+    if (e.name.startsWith(".") || e.name === "node_modules") {
+      continue;
+    }
     const full = path.join(dir, e.name);
     if (e.isDirectory()) {
       const hit = walkFor(full, filename);
-      if (hit) return hit;
+      if (hit) {
+        return hit;
+      }
     } else if (e.name === filename) {
       return full;
     }
@@ -68,10 +91,20 @@ export function pageExists(slug: string): boolean {
 
 export async function safeReadMarkdown(slug: string): Promise<string | null> {
   const p = resolveSlug(slug);
-  if (!p) return null;
+  if (!p) {
+    return null;
+  }
   try {
-    return await fs.readFile(p, 'utf8');
-  } catch {
+    return await fs.readFile(p, "utf8");
+  } catch (err: unknown) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      return null;
+    }
+    console.error(
+      `[wiki.safeReadMarkdown] readFile failed for ${slug} (${p}):`,
+      code ?? err
+    );
     return null;
   }
 }
@@ -83,13 +116,16 @@ export interface FrontmatterResult {
 
 export function parseFrontmatter(content: string): FrontmatterResult {
   const match = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
-  if (!match) return { frontmatter: null, body: content };
+  if (!match) {
+    return { frontmatter: null, body: content };
+  }
 
   const [, yamlBlock, rest] = match;
   try {
     const fm = parseYaml(yamlBlock);
     return { frontmatter: fm ?? {}, body: rest.trimStart() };
-  } catch {
+  } catch (err) {
+    console.error("[wiki.parseFrontmatter] YAML parse failed:", err);
     return { frontmatter: null, body: rest.trimStart() };
   }
 }
@@ -100,7 +136,9 @@ export function parseFrontmatter(content: string): FrontmatterResult {
  */
 export function parseReferencedBy(content: string): string[] {
   const idx = content.search(/^## Referenced By\b/m);
-  if (idx < 0) return [];
+  if (idx < 0) {
+    return [];
+  }
 
   const after = content.slice(idx);
   const endMatch = after.slice(2).search(/^##?[^#]/m);
