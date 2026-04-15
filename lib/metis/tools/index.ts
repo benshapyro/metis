@@ -16,3 +16,5 @@ export { readFrontmatterTool, readFrontmatter } from './read-frontmatter';
 export type { ReadFrontmatterData } from './read-frontmatter';
 
 export { listPagesTool, listPages } from './list-pages';
+
+export { getBacklinksTool, getBacklinks } from './get-backlinks';
