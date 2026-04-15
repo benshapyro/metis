@@ -35,7 +35,11 @@ export function estimateCostUSD({
 }: UsageInput): number {
   const p = PRICING[model];
   if (!p) {
-    return 0;
+    console.error(
+      `[cost] unknown model "${model}" — using Opus pricing as upper bound (cap may overshoot)`
+    );
+    // Pessimistic worst-case so spend cap still fires
+    return (inputTokens * 15 + outputTokens * 75) / 1_000_000;
   }
   const uncachedIn = Math.max(
     0,

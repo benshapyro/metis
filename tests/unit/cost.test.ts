@@ -27,14 +27,15 @@ describe("estimateCostUSD", () => {
     expect(opus).toBeGreaterThan(sonnet);
   });
 
-  it("unknown model returns 0", () => {
-    expect(
-      estimateCostUSD({
-        model: "foo/bar",
-        inputTokens: 1000,
-        outputTokens: 100,
-      })
-    ).toBe(0);
+  it("unknown model uses Opus pricing as pessimistic upper bound", () => {
+    const c = estimateCostUSD({
+      model: "foo/bar",
+      inputTokens: 1000,
+      outputTokens: 100,
+    });
+    // (1000*15 + 100*75) / 1_000_000 = 0.0225
+    expect(c).toBeGreaterThan(0);
+    expect(c).toBeCloseTo(0.0225, 4);
   });
 
   it("cached tokens cost less than uncached", () => {
