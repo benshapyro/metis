@@ -148,7 +148,7 @@ export async function POST(request: Request) {
         totalCacheCreationTokens +=
           u.inputTokenDetails?.cacheCreationTokens ?? 0;
       },
-      onFinish: ({ uiMessages: finalMessages }: any) => {
+      onFinish: ({ messages: finalMessages }: any) => {
         if (!threadId) {
           console.error(
             "[chat.onFinish] no threadId in body; skipping persist"
