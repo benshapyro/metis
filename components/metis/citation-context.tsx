@@ -9,7 +9,7 @@ export interface CitationSource {
 }
 
 interface CitationContextValue {
-  /** Slugs the agent has actually retrieved in this assistant turn. */
+  /** Slugs the agent has retrieved in this thread (aggregated across turns). */
   allowlist: Set<string>;
   /** Lookup for richer source metadata once pages are read. */
   sourcesBySlug: Record<string, CitationSource>;

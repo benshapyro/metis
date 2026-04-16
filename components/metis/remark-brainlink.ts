@@ -38,14 +38,26 @@ export const remarkBrainlink: Plugin<[RemarkBrainlinkOptions], Root> = ({
           } as Text);
         }
         const verified = allowlist.has(slug);
+        // Use a custom mdast type (NOT "link") so Streamdown's URL sanitizer
+        // doesn't run on it. `hName: 'a'` renders as <a>, standard HTML that
+        // survives rehype-harden. The href encodes the slug as a same-origin
+        // fragment — components.a in message.tsx detects the `#brainlink-`
+        // prefix + children text (the label) and renders our Brainlink /
+        // BrainlinkUnverified. rehype-harden strips unknown data-* attributes,
+        // so we can't use them; the href itself is the signal channel.
+        const href = `#brainlink-${encodeURIComponent(slug)}`;
         const brainlink: any = {
-          type: verified ? "brainlink" : "brainlinkUnverified",
-          slug,
-          text: label,
+          type: "brainlink",
           data: {
-            hName: verified ? "brainlink" : "brainlink-unverified",
-            hProperties: { slug, label, verified },
+            hName: "a",
+            hProperties: { href },
+            // Round-trip hints for internal consumers (tests, persistence
+            // layer) that walk the mdast tree before hast conversion.
+            slug,
+            label,
+            verified,
           },
+          children: [{ type: "text", value: label }],
         };
         children.push(brainlink as PhrasingContent);
         lastEnd = start + m[0].length;

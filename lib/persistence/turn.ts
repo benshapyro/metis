@@ -50,6 +50,23 @@ export async function persistAssistantTurn(args: PersistArgs): Promise<void> {
   if (!last || last.role !== "assistant") {
     return;
   }
+  // Skip turns that didn't produce a real assistant response. We require at
+  // least one text part with non-empty content. Two failure modes this
+  // catches:
+  //   1. Stream-level error before any content (e.g., AI Gateway returns
+  //      `type: "error"` with "Insufficient funds" and closes immediately —
+  //      parts is []).
+  //   2. Mid-stream crash AFTER a tool call but BEFORE text (parts has
+  //      tool-* entries but no text). Without this guard we'd persist a
+  //      retrieval_trace with non-empty pagesRead + empty citedPages, which
+  //      eval analytics would misread as a "clean read with no citations" —
+  //      a false-quality signal.
+  const hasTextContent = (last.parts ?? []).some(
+    (p) => p.type === "text" && ((p as TextPart).text?.trim().length ?? 0) > 0
+  );
+  if (!hasTextContent) {
+    return;
+  }
 
   // Compute retrieval trace from message parts.
   const toolsCalled: Array<{

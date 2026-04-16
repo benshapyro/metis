@@ -1,20 +1,20 @@
 "use client";
-import {
-  getToolName,
-  isStaticToolUIPart,
-  isTextUIPart,
-  isToolUIPart,
-} from "ai";
+import { getToolName, isTextUIPart, isToolUIPart } from "ai";
 import { useMemo } from "react";
 import { Streamdown } from "streamdown";
 import type { MetisUIMessage } from "@/lib/metis/agent";
-import { CitationProvider, type CitationSource } from "./citation-context";
+import { buildCitationContext } from "@/lib/metis/citation-allowlist";
+import { CitationProvider } from "./citation-context";
 import { Brainlink, BrainlinkUnverified } from "./inline-citation";
 import { remarkBrainlink } from "./remark-brainlink";
 import { ToolStepPill } from "./tool-step-pill";
 
 interface Props {
   message: MetisUIMessage;
+  // Prior messages in the thread (ordered, excluding `message` itself). Their
+  // tool outputs contribute to the allowlist so cross-turn synthesis queries
+  // can cite pages retrieved in earlier turns without re-reading them.
+  priorMessages?: MetisUIMessage[];
   onOpenSource: (slug: string) => void;
 }
 
@@ -49,38 +49,15 @@ const PILL_STATE_MAP: Record<string, ToolPillState | null> = {
   "output-denied": null,
 };
 
-export function AssistantMessage({ message, onOpenSource }: Props) {
-  // Build per-turn allowlist + sources lookup from static tool parts.
-  const { allowlist, sourcesBySlug } = useMemo(() => {
-    const allow = new Set<string>();
-    const sources: Record<string, CitationSource> = {};
-    for (const p of message.parts) {
-      if (!isStaticToolUIPart(p)) {
-        continue;
-      }
-      const name = String(getToolName(p));
-      if (
-        (name === "read_page" || name === "read_frontmatter") &&
-        p.state === "output-available"
-      ) {
-        const out = p.output as {
-          ok: boolean;
-          data?: { slug: string; frontmatter: Record<string, unknown> | null };
-        };
-        if (out?.ok && out.data && !sources[out.data.slug]) {
-          allow.add(out.data.slug);
-          sources[out.data.slug] = {
-            slug: out.data.slug,
-            title:
-              (out.data.frontmatter?.title as string | undefined) ??
-              out.data.slug,
-            confidence: out.data.frontmatter?.confidence as string | undefined,
-          };
-        }
-      }
-    }
-    return { allowlist: allow, sourcesBySlug: sources };
-  }, [message.parts]);
+export function AssistantMessage({
+  message,
+  priorMessages,
+  onOpenSource,
+}: Props) {
+  const { allowlist, sourcesBySlug } = useMemo(
+    () => buildCitationContext([...(priorMessages ?? []), message]),
+    [message, priorMessages]
+  );
 
   return (
     <CitationProvider
@@ -163,17 +140,32 @@ export function AssistantMessage({ message, onOpenSource }: Props) {
           isTextUIPart(p) ? (
             <Streamdown
               components={{
-                brainlink: ({
-                  slug,
-                  label,
-                }: Record<string, unknown> & { node?: unknown }) => (
-                  <Brainlink label={String(label)} slug={String(slug)} />
-                ),
-                "brainlink-unverified": ({
-                  label,
-                }: Record<string, unknown> & { node?: unknown }) => (
-                  <BrainlinkUnverified label={String(label)} />
-                ),
+                // remark-brainlink emits anchors with href="#brainlink-<encoded-slug>".
+                // rehype-harden strips data-* attributes, so the href is the
+                // single signal channel; the label is just the children text.
+                a: (anchorProps) => {
+                  const { href, children } = anchorProps;
+                  if (
+                    typeof href === "string" &&
+                    href.startsWith("#brainlink-")
+                  ) {
+                    const slug = decodeURIComponent(
+                      href.slice("#brainlink-".length)
+                    );
+                    const label = String(children ?? slug);
+                    const verified = allowlist.has(slug);
+                    return verified ? (
+                      <Brainlink label={label} slug={slug} />
+                    ) : (
+                      <BrainlinkUnverified label={label} />
+                    );
+                  }
+                  return (
+                    <a href={href} rel="noopener noreferrer" target="_blank">
+                      {children}
+                    </a>
+                  );
+                },
               }}
               key={`text-${i}`}
               remarkPlugins={[[remarkBrainlink, { allowlist }]]}

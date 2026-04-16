@@ -1,60 +1,48 @@
 "use client";
 import { AlertTriangle } from "lucide-react";
-import {
-  InlineCitation,
-  InlineCitationCard,
-  InlineCitationCardBody,
-  InlineCitationCardTrigger,
-  InlineCitationText,
-} from "@/components/ai-elements/inline-citation";
 import { cn } from "@/lib/utils";
 import { useCitationContext } from "./citation-context";
 
-// InlineCitationCardTrigger expects a `sources: string[]` prop (badge trigger).
-// We repurpose it by passing a single-element array with the slug as the "url".
-// The onClick is added to the outer InlineCitation wrapper via a custom button.
+// Small custom pill (not ai-elements' InlineCitationCardTrigger — that one
+// does `new URL(sources[0]).hostname` which fails on wiki slugs like
+// `concepts/context-engineering`). Pure Tailwind + native <button>; hover
+// uses the standard title attribute, click opens the source panel.
 
 export function Brainlink({ slug, label }: { slug: string; label: string }) {
   const { sourcesBySlug, onOpenSource } = useCitationContext();
   const src = sourcesBySlug[slug];
   const confidenceWeak = src?.confidence === "auto-ingested";
   const coverageWeak = src?.coverage === "low";
+  const tooltip = [
+    src?.title ?? slug,
+    src?.confidence && `(${src.confidence})`,
+    coverageWeak && "coverage: low",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
-    <InlineCitation>
-      <InlineCitationText>{label}</InlineCitationText>
-      <InlineCitationCard>
-        <InlineCitationCardTrigger
-          aria-label={`Open source ${src?.title ?? slug}`}
-          className={cn(
-            "cursor-pointer",
-            (confidenceWeak || coverageWeak) && "ring-1 ring-amber-400/60"
-          )}
-          onClick={() => onOpenSource(slug)}
-          sources={[slug]}
-        />
-        <InlineCitationCardBody>
-          <div className="space-y-1 p-3 text-xs">
-            <div className="font-medium">{src?.title ?? slug}</div>
-            {src?.confidence && (
-              <div className="text-muted-foreground">
-                Confidence: {src.confidence}
-              </div>
-            )}
-            {coverageWeak && (
-              <div className="text-amber-500">Coverage: low</div>
-            )}
-          </div>
-        </InlineCitationCardBody>
-      </InlineCitationCard>
-    </InlineCitation>
+    <button
+      aria-label={`Open source ${src?.title ?? slug}`}
+      className={cn(
+        "mx-0.5 inline-flex items-baseline rounded-sm border px-1 py-0.5 text-[0.85em] leading-tight",
+        "border-primary/30 bg-primary/5 text-primary",
+        "transition-colors hover:bg-primary/10 hover:border-primary/50",
+        (confidenceWeak || coverageWeak) && "ring-1 ring-amber-400/60",
+      )}
+      onClick={() => onOpenSource(slug)}
+      title={tooltip}
+      type="button"
+    >
+      {label}
+    </button>
   );
 }
 
 export function BrainlinkUnverified({ label }: { label: string }) {
   return (
     <span
-      className="inline-flex items-center gap-0.5 px-1 rounded bg-amber-500/10 text-amber-600 text-[0.9em]"
+      className="mx-0.5 inline-flex items-center gap-0.5 rounded-sm bg-amber-500/10 px-1 py-0.5 text-[0.85em] text-amber-600"
       title="This citation wasn't verified against a retrieved source."
     >
       <AlertTriangle className="size-3" />

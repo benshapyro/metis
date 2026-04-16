@@ -32,6 +32,7 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { generateUUID } from "@/lib/utils";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -109,7 +110,11 @@ export function AppSidebar({ user }: { user: User | undefined }) {
                     className="h-8 rounded-lg border border-sidebar-border text-[13px] text-sidebar-foreground/70 transition-colors duration-150 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
                     onClick={() => {
                       setOpenMobile(false);
-                      router.push("/");
+                      // Navigate directly to a new chat URL with a fresh
+                      // UUID. Pushing to "/" would hit app/(chat)/page.tsx,
+                      // which redirects back to the latest thread — making
+                      // the button appear dead.
+                      router.push(`/chat/${generateUUID()}`);
                     }}
                     tooltip="New Chat"
                   >

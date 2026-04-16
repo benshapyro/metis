@@ -33,8 +33,22 @@ export function ChatShell() {
             <Welcome onStart={submit} />
           ) : (
             <div className="mx-auto max-w-3xl p-4 space-y-6">
-              {messages.map((m) => {
+              {messages.map((m, i) => {
                 const msg = m as MetisUIMessage;
+                // Skip empty assistant turns (stream errored before any
+                // parts emitted — e.g., Gateway "Insufficient funds"). Without
+                // this we render an empty bubble with orphan rate buttons.
+                if (
+                  msg.role === "assistant" &&
+                  (!msg.parts || msg.parts.length === 0)
+                ) {
+                  return null;
+                }
+                // Prior assistant messages feed the cross-turn allowlist so
+                // pages read in earlier turns still render as verified pills.
+                const priorAssistant = messages
+                  .slice(0, i)
+                  .filter((x) => x.role === "assistant") as MetisUIMessage[];
                 return (
                   <div className="space-y-2" key={msg.id}>
                     <div className="text-xs uppercase text-muted-foreground">
@@ -45,6 +59,7 @@ export function ChatShell() {
                         <AssistantMessage
                           message={msg}
                           onOpenSource={setOpenSource}
+                          priorMessages={priorAssistant}
                         />
                         <Feedback messageId={msg.id} />
                       </>

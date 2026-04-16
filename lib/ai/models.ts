@@ -1,9 +1,11 @@
-// Metis two-tier model registry.
-// navigate = fast, lower-cost (Sonnet 4.6) — used for routing, title gen, tools.
-// synthesize = high-quality (Opus 4.6) — used for final synthesis responses.
+// Metis model registry. v1 runs everything on Sonnet 4.6 — eval demonstrated
+// Sonnet handles the full query mix (grounding gates, clarifications, cross-
+// domain synthesis, exhaustive pricing tables) at ~5x lower cost than Opus.
+// Two-tier routing (D11: Sonnet navigate + Opus synthesize) was designed for
+// v1.5 if Sonnet ever regresses on synthesis-class queries at scale.
 export const METIS_MODELS = {
   navigate: "anthropic/claude-sonnet-4.6",
-  synthesize: "anthropic/claude-opus-4.6",
+  synthesize: "anthropic/claude-sonnet-4.6",
 } as const;
 
 export type MetisModelRole = keyof typeof METIS_MODELS;
@@ -34,13 +36,13 @@ export type ChatModel = {
 };
 
 // Legacy export shape consumed by downstream components and the chat route.
-// Keeping a single Metis (Opus 4.6) entry as the default synthesis model.
+// Single Metis (Sonnet 4.6) entry as the default synthesis model.
 export const chatModels: ChatModel[] = [
   {
     id: METIS_MODELS.synthesize,
-    name: "Metis (Opus 4.6 synthesis)",
+    name: "Metis (Sonnet 4.6)",
     provider: "anthropic",
-    description: "Anthropic Claude Opus 4.6 — high-quality synthesis",
+    description: "Anthropic Claude Sonnet 4.6 — synthesis + tool-use",
     gatewayOrder: ["anthropic"],
   },
 ];

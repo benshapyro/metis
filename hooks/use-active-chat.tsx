@@ -28,6 +28,7 @@ import { DEFAULT_CHAT_MODEL } from "@/lib/ai/models";
 type Vote = { messageId: string; isUpvoted: boolean };
 
 import { ChatbotError } from "@/lib/errors";
+import { isGatewayBillingError } from "@/lib/metis/error-classifier";
 import type { ChatMessage } from "@/lib/types";
 import { fetcher, fetchWithErrorHandlers, generateUUID } from "@/lib/utils";
 
@@ -152,7 +153,11 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
       mutate(unstable_serialize(getChatHistoryPaginationKey));
     },
     onError: (error) => {
-      if (error.message?.includes("AI Gateway requires a valid credit card")) {
+      // Route Gateway billing walls (missing payment, exhausted balance) to
+      // the credit-card alert. Classification lives in error-classifier.ts so
+      // the rules are unit-tested — a previous substring-only match silently
+      // missed "Insufficient funds" and showed an empty bubble.
+      if (isGatewayBillingError(error.message)) {
         setShowCreditCardAlert(true);
       } else if (error instanceof ChatbotError) {
         toast({ type: "error", description: error.message });
