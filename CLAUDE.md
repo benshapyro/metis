@@ -9,7 +9,7 @@ Last session handover: `docs/handovers/` (newest file).
 ## Quick start
 
 - `pnpm install && pnpm dev` — local dev at `localhost:3000`
-- `pnpm test` — 44 Vitest tests (tools + wiki + remark + hot-caches + cost + prompt)
+- `pnpm test` — 57 Vitest tests (tools + wiki + remark + hot-caches + cost + prompt + citation-allowlist + error-classifier)
 - `pnpm exec tsc --noEmit && node_modules/.bin/biome check .` — pre-commit sanity
 - Restart dev after env change: `pkill -f "next dev" && pnpm dev`
 - Check preview build logs: `vercel inspect <deploy-id> --logs | tail -80`
@@ -50,6 +50,12 @@ Last session handover: `docs/handovers/` (newest file).
 - Then restart `pnpm dev`. Required keys land: `DATABASE_URL`, `REDIS_URL`, `KV_REST_API_URL`, `VERCEL_OIDC_TOKEN`, `APP_PASSWORD`, `AUTH_SECRET`, `WIKI_ROOT=./wiki/wiki`.
 - Cannot read/write `.env*` from Claude's sandbox — use Cursor (`cursor .env.example`) or the user's shell.
 
+## Gateway debugging
+
+- **"Insufficient funds" often means expired OIDC token, not missing credits.** Decode JWT first: `node -e "const t=require('fs').readFileSync('.env.local','utf8').split('\n').find(l=>l.startsWith('VERCEL_OIDC_TOKEN=')).split('=').slice(1).join('=');const p=JSON.parse(Buffer.from(t.split('.')[1],'base64url'));console.log('exp:',new Date(p.exp*1000),'team:',p.iss)"`. If expired, `vercel env pull .env.local --environment=development --yes` + restart dev.
+- **`vercel deploy` / `vercel --prod` require `dangerouslyDisableSandbox: true`** from Claude's sandbox (lock-file EPERM in Vercel CLI cache).
+- **DB diagnostic scripts also need sandbox disabled** (read `.env.local` for `DATABASE_URL`).
+
 ## Vercel CLI quirks
 
 - `vercel env add <name> preview --yes` (no branch) is broken on v50–v51. Workaround: add with explicit branch name (`vercel env add NAME preview <branch-name> --value X --yes`; branch must exist on GitHub), or web dashboard for all-branches case.
@@ -66,9 +72,16 @@ const sql = postgres(url, { max: 1 });
 "
 ```
 
+## Model config
+
+- `lib/ai/models.ts` → `METIS_MODELS.{navigate,synthesize}` is the single source for model IDs. Currently both Sonnet 4.6. Two-tier routing (D11: Sonnet navigate + Opus synthesize) deferred to v1.5.
+- `lib/safety/cost.ts` has per-model pricing tables — updates automatically when `METIS_MODELS` changes.
+
 ## Citation pipeline (D21)
 
 - `components/metis/remark-brainlink.ts` emits custom mdast type `brainlink` (NOT `link`) with `data.hName='a'` + `href='#brainlink-<encoded-slug>'`.
-- `components/metis/message.tsx` → `components.a` detects `href.startsWith('#brainlink-')` and decodes slug from href. Verified status comes from per-turn `allowlist` (slugs that appeared in `tool-read_page`/`read_frontmatter` outputs).
+- `lib/metis/citation-allowlist.ts` builds the **thread-wide** allowlist (aggregates `read_page`/`read_frontmatter` outputs across all prior assistant messages, not just the current turn). Called by `message.tsx` via `buildCitationContext`.
+- `components/metis/message.tsx` accepts `priorMessages` prop from `ChatShell`; `components.a` detects `href.startsWith('#brainlink-')` and decodes slug from href.
+- `lib/metis/error-classifier.ts` — `isGatewayBillingError()` classifies Gateway billing errors (anchored on "AI Gateway" prefix). Used by `useActiveChat.onError`.
 - `components/metis/inline-citation.tsx` is a custom `<button>` pill — do NOT re-introduce `ai-elements/InlineCitationCardTrigger` (does `new URL(sources[0]).hostname` and throws on slugs).
 - `lib/metis/brainlink-syntax.ts` is the ONE regex for `[[slug]]` parsing — shared between remark plugin and `persistAssistantTurn`. Do not drift.
